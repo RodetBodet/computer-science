@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Strikepoint 3D: 5v5 bomb defusal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="game">
+    <div id="view"></div>
+    <canvas id="flashimg"></canvas>
+    <div id="smoke-ov"></div>
+    <div id="scope" class="hidden"><div class="ring"></div><div class="scope-h"></div><div class="scope-v"></div></div>
+    <div id="dmg-vignette"></div>
+    <div id="flash"></div>
+
+    <!-- ===== HUD ===== -->
+    <div id="hud" class="hidden">
+      <div id="radar-box">
+        <canvas id="radar" width="230" height="230"></canvas>
+        <div id="location"></div>
+      </div>
+      <div id="topbar">
+        <div id="side-l" class="side t"><div class="alive" id="alive-l"></div><b id="score-l">0</b></div>
+        <div id="timer-box"><div id="timer">1:55</div><div id="round-label">Round 1</div></div>
+        <div id="side-r" class="side ct"><b id="score-r">0</b><div class="alive" id="alive-r"></div></div>
+      </div>
+      <div id="killfeed"></div>
+      <div id="crosshair"><i class="l"></i><i class="r"></i><i class="t"></i><i class="b"></i></div>
+      <div id="dmg-dir"><div class="arc"></div></div>
+      <div id="center-msg"></div>
+      <div id="sub-msg"></div>
+      <div id="hint"></div>
+      <div id="progress" class="hidden"><div id="progress-label">Planting</div><div class="track"><div id="progress-fill"></div></div></div>
+      <div id="spectate" class="hidden"></div>
+      <div id="vitals">
+        <div class="vital hp"><span class="ico">✚</span><b id="hp">100</b></div>
+        <div class="vital armor" id="armor-box"><span class="ico">⛨</span><b id="armor">0</b></div>
+      </div>
+      <div id="money-box">
+        <div id="money">$800</div>
+        <div id="money-pop"></div>
+        <div id="buyzone">B · buy</div>
+      </div>
+      <div id="weapon-box">
+        <div class="icons"><span id="kit-icon" class="hidden">KIT</span><span id="c4-icon" class="hidden">C4</span></div>
+        <div id="inventory"></div>
+        <div id="ammo"><b id="ammo-mag">20</b><span id="ammo-res">/ 120</span></div>
+        <div id="weapon-name">Glock-18</div>
+      </div>
+    </div>
+
+    <!-- ===== Buy menu ===== -->
+    <div id="buy" class="overlay hidden">
+      <div class="panel buy-panel">
+        <div class="panel-head">
+          <h2>Buy</h2>
+          <span id="buy-time"></span>
+          <div id="buy-money">$800</div>
+          <button class="ghost" id="buy-close">Close · B</button>
+        </div>
+        <div id="buy-grid"></div>
+        <p class="note">Press a number for a category, then a number to buy (Backspace goes back), or click. Buying works in your spawn during buy time.</p>
+      </div>
+    </div>
+
+    <div id="scoreboard" class="hidden"></div>
+
+    <!-- ===== Lobby ===== -->
+    <div id="menu" class="lobby2">
+      <nav class="topnav">
+        <div class="tn-left">
+          <button class="icon" data-tab="home" title="Home"><svg viewBox="0 0 24 24"><path d="M3 11 12 3l9 8v10h-6v-6H9v6H3z"/></svg></button>
+          <button class="icon" id="tn-settings" title="Settings"><svg viewBox="0 0 24 24"><path d="M12 8.5a3.5 3.5 0 1 0 0 7 3.5 3.5 0 0 0 0-7Zm9 4.6v-2.2l-2.4-.6a7 7 0 0 0-.7-1.7l1.3-2.1-1.6-1.6-2.1 1.3a7 7 0 0 0-1.7-.7L13.1 3h-2.2l-.6 2.4a7 7 0 0 0-1.7.7L6.5 4.8 4.9 6.4l1.3 2.1a7 7 0 0 0-.7 1.7L3 10.9v2.2l2.4.6c.2.6.4 1.2.7 1.7l-1.3 2.1 1.6 1.6 2.1-1.3c.5.3 1.1.6 1.7.7l.6 2.5h2.2l.6-2.4c.6-.2 1.2-.4 1.7-.7l2.1 1.3 1.6-1.6-1.3-2.1c.3-.5.6-1.1.7-1.7z"/></svg></button>
+          <button class="icon" id="tn-quit" title="Quit"><svg viewBox="0 0 24 24"><path d="M11 3h2v9h-2zM6.3 6.3l1.4 1.4A6 6 0 1 0 16.3 7.7l1.4-1.4A8 8 0 1 1 6.3 6.3z"/></svg></button>
+        </div>
+        <div class="tn-tabs">
+          <button data-tab="inventory">Inventory</button><i></i>
+          <button data-tab="loadout">Loadout</button><i></i>
+          <button data-tab="play" class="tn-play">Play</button><i></i>
+          <button data-tab="missions">Missions</button><i></i>
+          <button data-tab="news">News</button>
+        </div>
+        <div class="tn-right"><div id="tn-queue" class="tn-queue hidden"><div class="spinner"></div><span>Searching</span><b id="queue-time">0:00</b><button id="queue-cancel" title="Cancel">✕</button></div></div>
+      </nav>
+
+      <section id="tab-home" class="tab">
+        <div id="home-cards" class="home-cards"></div>
+        <div id="player-card" class="player-card"></div>
+      </section>
+
+      <section id="tab-play" class="tab hidden">
+        <div class="play-panel">
+          <div id="modes" class="play-modes"></div>
+          <div class="play-body">
+            <div id="maps" class="maps"></div>
+            <aside class="play-side">
+              <div class="label">Side</div>
+              <div class="seg" id="side-seg"><button data-team="R">Random</button><button data-team="T">Attackers</button><button data-team="CT">Defenders</button></div>
+              <label class="field">Bots
+                <select id="opt-diff"><option value="0">Easy</option><option value="1" selected>Normal</option><option value="2">Hard</option><option value="3">Expert</option></select>
+              </label>
+              <div id="play-summary" class="play-summary"></div>
+            </aside>
+          </div>
+          <div class="play-foot"><p id="lobby-note" class="lobby-note"></p><button id="find-btn" class="go">GO</button></div>
+        </div>
+      </section>
+
+      <section id="tab-loadout" class="tab hidden">
+        <div class="side-panel left">
+          <div class="seg" id="lo-team"><button data-team="T">Attackers</button><button data-team="CT">Defenders</button></div>
+          <div id="lo-slots" class="lo-slots"></div>
+        </div>
+        <div class="side-panel right"><div id="lo-finishes"></div></div>
+      </section>
+
+      <section id="tab-inventory" class="tab hidden">
+        <div class="wide-panel">
+          <div id="inv-filters" class="inv-filters"></div>
+          <div id="inv-grid" class="inv-grid"></div>
+        </div>
+      </section>
+
+      <section id="tab-missions" class="tab hidden"><div class="wide-panel narrow" id="missions-view"></div></section>
+      <section id="tab-news" class="tab hidden"><div class="wide-panel narrow" id="news-view"></div></section>
+
+      <div id="settings-modal" class="overlay hidden">
+        <div class="panel small">
+          <h2>Settings</h2>
+          <label class="field">Graphics
+            <select id="opt-quality"><option value="0">Fast</option><option value="1" selected>Balanced</option><option value="2">High</option></select>
+          </label>
+          <label class="field">Crosshair color <input type="color" id="opt-xcol" value="#4cff6a"></label>
+          <label class="check"><input type="checkbox" id="opt-fs" checked> Fullscreen</label>
+          <label class="slider">Sensitivity <input type="range" id="opt-sens" min="0.3" max="6" step="0.05" value="1.6"><output id="sens-val">1.60</output></label>
+          <label class="slider">Volume <input type="range" id="opt-vol" min="0" max="1" step="0.05" value="0.6"></label>
+          <div class="controls">
+            <span><kbd>WASD</kbd> move</span><span><kbd>Shift</kbd> walk</span><span><kbd>Ctrl</kbd> crouch</span><span><kbd>Space</kbd> jump</span>
+            <span><kbd>LMB</kbd> fire</span><span><kbd>RMB</kbd> scope / stab / lob</span><span><kbd>R</kbd> reload</span><span><kbd>F</kbd> inspect</span>
+            <span><kbd>1-5</kbd> <kbd>Q</kbd> weapons</span><span><kbd>G</kbd> drop</span><span><kbd>E</kbd> defuse / pick up</span><span><kbd>B</kbd> buy</span><span><kbd>Tab</kbd> scores</span>
+          </div>
+          <button id="settings-close" class="primary">Done</button>
+        </div>
+      </div>
+      <div id="quit-modal" class="overlay hidden">
+        <div class="panel small"><h2>Quit Strikepoint?</h2><p id="quit-msg">Your progress is saved on this computer.</p>
+          <div class="row-btns"><button id="quit-yes" class="primary">Quit</button><button id="quit-no" class="ghost">Cancel</button></div></div>
+      </div>
+    </div>
+
+    <!-- ===== Match found ===== -->
+    <div id="found" class="overlay hidden">
+      <div class="panel found-panel">
+        <div class="found-title">Your match is ready</div>
+        <div id="found-map" class="found-map"></div>
+        <div id="found-dots" class="found-dots"></div>
+        <button id="accept-btn" class="primary big">Accept</button>
+        <div class="found-bar"><div id="found-fill"></div></div>
+      </div>
+    </div>
+
+    <div id="pause" class="overlay hidden">
+      <div class="panel small">
+        <h2>Paused</h2>
+        <button id="resume-btn" class="primary">Resume</button>
+        <label class="slider">Sensitivity <input type="range" id="pause-sens" min="0.3" max="6" step="0.05" value="1.6"><output id="pause-sens-val">1.60</output></label>
+        <button id="quit-btn" class="ghost">Leave match</button>
+      </div>
+    </div>
+
+    <div id="matchover" class="overlay hidden">
+      <div class="panel">
+        <h1 id="mo-title">Victory</h1>
+        <p id="mo-sub"></p>
+        <div id="mo-rating" class="mo-rating"></div>
+        <div id="mo-xp" class="mo-xp"></div>
+        <div id="mo-drops" class="mo-drops"></div>
+        <div id="mo-board"></div>
+        <div class="row-btns"><button id="again-btn" class="primary">Play again</button><button id="menu-btn" class="ghost">Back to lobby</button></div>
+      </div>
+    </div>
+
+    <div id="loading" class="overlay"><div class="panel small"><h2>Loading…</h2><p id="load-msg">Building the map</p></div></div>
+  </div>
+
+  <script>
+    // module scripts can't load from a file opened straight from disk
+    if (location.protocol === 'file:') document.addEventListener('DOMContentLoaded', () => {
+      document.getElementById('load-msg').innerHTML = 'Open the game with <b>play.command</b> (double-click it in the game folder). Browsers block games opened straight from a file from loading their 3D models, textures and sounds.';
+    });
+  </script>
+  <script type="importmap">
+    { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.158.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.158.0/examples/jsm/" } }
+  </script>
+  <script type="module" src="src/boot.js"></script>
+</body>
+</html>

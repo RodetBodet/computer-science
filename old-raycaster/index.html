@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Strikepoint: 5v5 bomb defusal</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div id="game">
+    <!-- 3D world (low-res raycaster, scaled up) + full-res overlay for the weapon -->
+    <canvas id="view"></canvas>
+    <canvas id="fx"></canvas>
+
+    <div id="scope" class="hidden"><div class="scope-h"></div><div class="scope-v"></div></div>
+    <div id="dmg-vignette"></div>
+    <div id="flash"></div>
+
+    <!-- ===== In-game HUD ===== -->
+    <div id="hud" class="hidden">
+      <div id="radar-box">
+        <canvas id="radar" width="200" height="200"></canvas>
+        <div id="location">T Spawn</div>
+      </div>
+
+      <div id="topbar">
+        <div class="side t"><div class="alive" id="alive-t"></div><b id="score-t">0</b></div>
+        <div id="timer-box">
+          <div id="timer">1:55</div>
+          <div id="round-label">Round 1</div>
+        </div>
+        <div class="side ct"><b id="score-ct">0</b><div class="alive" id="alive-ct"></div></div>
+      </div>
+
+      <div id="killfeed"></div>
+
+      <div id="crosshair"><i class="l"></i><i class="r"></i><i class="t"></i><i class="b"></i></div>
+      <div id="dmg-dir"><div class="arc"></div></div>
+
+      <div id="center-msg"></div>
+      <div id="sub-msg"></div>
+      <div id="hint"></div>
+
+      <div id="progress" class="hidden">
+        <div id="progress-label">Planting the bomb</div>
+        <div class="track"><div id="progress-fill"></div></div>
+      </div>
+
+      <div id="spectate" class="hidden"></div>
+
+      <div id="vitals">
+        <div class="vital hp"><span class="ico">+</span><b id="hp">100</b></div>
+        <div class="vital armor"><span class="ico">&#9960;</span><b id="armor">0</b></div>
+      </div>
+
+      <div id="money-box">
+        <div id="money">$800</div>
+        <div id="money-pop"></div>
+        <div id="buyzone">B &middot; Buy menu</div>
+      </div>
+
+      <div id="weapon-box">
+        <div id="bomb-carried" class="hidden">C4</div>
+        <div id="inventory"></div>
+        <div id="ammo"><b id="ammo-mag">20</b><span id="ammo-res">/ 120</span></div>
+        <div id="weapon-name">Glock-18</div>
+      </div>
+    </div>
+
+    <!-- ===== Buy menu ===== -->
+    <div id="buy" class="overlay hidden">
+      <div class="panel buy-panel">
+        <div class="panel-head">
+          <h2>Buy menu</h2>
+          <div id="buy-money">$800</div>
+          <button class="ghost" id="buy-close">Close &middot; B</button>
+        </div>
+        <div id="buy-grid"></div>
+        <p class="note">Press a number to open a category, then a number to buy (Backspace goes back), or just click. Buying only works in your spawn during buy time.</p>
+      </div>
+    </div>
+
+    <!-- ===== Scoreboard (hold Tab) ===== -->
+    <div id="scoreboard" class="hidden"></div>
+
+    <!-- ===== Main menu ===== -->
+    <div id="menu" class="overlay">
+      <div class="menu-card">
+        <div class="logo"><span>STRIKE</span>POINT</div>
+        <p class="tagline">5v5 bomb defusal &middot; built with HTML, CSS &amp; JavaScript</p>
+
+        <div class="label">Pick a side</div>
+        <div class="teams">
+          <button class="team-btn t selected" data-team="T">
+            <b>Terrorists</b><small>Carry the C4 and plant it at site A or B</small>
+          </button>
+          <button class="team-btn ct" data-team="CT">
+            <b>Counter-Terrorists</b><small>Hold the sites and defuse the bomb</small>
+          </button>
+        </div>
+
+        <div class="options">
+          <label>Bots
+            <select id="opt-diff">
+              <option value="0">Easy</option>
+              <option value="1" selected>Normal</option>
+              <option value="2">Hard</option>
+            </select>
+          </label>
+          <label>Match
+            <select id="opt-rounds">
+              <option value="5">First to 5</option>
+              <option value="8" selected>First to 8</option>
+              <option value="13">First to 13</option>
+            </select>
+          </label>
+          <label>Graphics
+            <select id="opt-quality">
+              <option value="320">Retro</option>
+              <option value="480" selected>Normal</option>
+              <option value="640">Sharp</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="slider">Mouse sensitivity
+          <input type="range" id="opt-sens" min="0.2" max="3" step="0.05" value="1">
+          <output id="sens-val">1.00</output>
+        </label>
+
+        <button id="start-btn" class="primary">Deploy</button>
+
+        <div class="controls">
+          <span><kbd>WASD</kbd> move</span>
+          <span><kbd>Mouse</kbd> aim / shoot</span>
+          <span><kbd>RMB</kbd> scope</span>
+          <span><kbd>Shift</kbd> walk</span>
+          <span><kbd>C</kbd> crouch</span>
+          <span><kbd>Space</kbd> jump</span>
+          <span><kbd>R</kbd> reload</span>
+          <span><kbd>1 2 3</kbd> / <kbd>Q</kbd> weapons</span>
+          <span><kbd>4</kbd> grenades (RMB: lob)</span>
+          <span><kbd>G</kbd> drop gun</span>
+          <span><kbd>B</kbd> buy</span>
+          <span><kbd>E</kbd> plant / defuse</span>
+          <span><kbd>Tab</kbd> scores</span>
+          <span><kbd>Esc</kbd> pause</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===== Pause ===== -->
+    <div id="pause" class="overlay hidden">
+      <div class="panel small">
+        <h2>Paused</h2>
+        <button id="resume-btn" class="primary">Resume</button>
+        <label class="slider">Mouse sensitivity
+          <input type="range" id="pause-sens" min="0.2" max="3" step="0.05" value="1">
+          <output id="pause-sens-val">1.00</output>
+        </label>
+        <button id="quit-btn" class="ghost">Quit to menu</button>
+      </div>
+    </div>
+
+    <!-- ===== Match over ===== -->
+    <div id="matchover" class="overlay hidden">
+      <div class="panel">
+        <h1 id="mo-title">Victory</h1>
+        <p id="mo-sub"></p>
+        <div id="mo-board"></div>
+        <div class="row-btns">
+          <button id="again-btn" class="primary">Play again</button>
+          <button id="menu-btn" class="ghost">Main menu</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>
