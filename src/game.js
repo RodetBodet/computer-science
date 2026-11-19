@@ -488,7 +488,7 @@ function applyDamage(v, att, key, dmg, zone, info = {}) {
   if (!info.fire) { const k = armorHit ? 0.6 : 2.2; v.hurtP += rand(0.6, 1.2) * k; v.hurtY += rand(-1, 1) * k; }
   if (v.isPlayer) onPlayerHurt(att, d, info);
   else if (v.bot) botOnHurt(v, att);
-  if (att && att.isPlayer && att.team !== v.team && !info.fire && typeof showHitMarker === 'function') showHitMarker(zone === 'head', v.hp <= 0);
+  if (att && att.isPlayer && hostile(att, v) && !info.fire && typeof showHitMarker === 'function') showHitMarker(zone === 'head', v.hp <= 0);
   if (att && (att.isPlayer || att === CAM.view)) SFX.play(zone === 'head' && !info.fire ? (v.helmet || armorHit && zone === 'head' ? 'helmet' : 'headshot') : 'hit');
   else if (zone === 'head' && dist3(v, SFX.listener) < 20) SFX.play('headshot', { x: v.x, y: v.y + 1.7, z: v.z });
   if (v.hp <= 0) killAgent(v, att, key, zone === 'head' && !info.fire && !info.blast, info);
