@@ -121,6 +121,7 @@ function botHear(b, x, z, kind, d, src) {
 }
 function botOnHurt(b, att) {
   b.hurtT = G.time + 1.5;
+  if (b.hp > 0 && b.hp < 45) botCallout(b, 'hurt', att);
   if (att && att.alive && !b.bot.target) { b.bot.heard = { x: att.x, z: att.z, t: G.time, kind: 'hurt' }; }
 }
 function botFlashed(b) { b.bot.target = null; b.bot.reactT = 0.3; b.bot.wantDuck = Math.random() < 0.4; }
@@ -242,6 +243,8 @@ function updateBot(b, dt) {
         B.errY = gauss() * diff.aimErr * DEG * e; B.errP = gauss() * diff.aimErr * 0.6 * DEG * e;
         B.aimZone = Math.random() < diff.hs ? 'head' : 'chest';
         B.burstLeft = 0;
+        // teammates of the player also say it out loud in team chat (throttled in comms.js)
+        if (best !== B.target) botCallout(b, 'spot', best);
         // share the call with nearby teammates
         if (!RULES.ffa) for (const m of G.agents) if (m.bot && m !== b && m.alive && m.team === b.team && Math.hypot(m.x - b.x, m.z - b.z) < 35 && !m.bot.target) m.bot.heard = { x: best.x, z: best.z, t: G.time, kind: 'callout' };
       }
@@ -427,6 +430,16 @@ function objectives(b, dt) {
     }
     case 'save': navigate(b, dt); break;
     case 'roam': roam(b, dt); break;
+    case 'support': {
+      // answering a "need backup" call: walk to the player, then cover them until the call expires
+      const pl = G.player;
+      if (!pl.alive || G.time > B.supportUntil) { endSupport(b); break; }
+      const d = Math.hypot(b.x - pl.x, b.z - pl.z);
+      if (d > 3.5) { if (G.time > (B.supportRepath || 0)) { setGoal(b, pl.x, pl.z, true); B.supportRepath = G.time + 1.5; } navigate(b, dt); }
+      const f = dirFromAngles(pl.yaw, 0); B.look = { x: pl.x + f.x * 10, z: pl.z + f.z * 10 }; // watch where the player watches
+      B.wantWalk = d < 8;
+      break;
+    }
     default: break;
   }
   // investigate a recent noise when there is nothing better to do

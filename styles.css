@@ -3,6 +3,7 @@
   --t: #e8b04a; --ct: #6fa2ff; --ink: #f3efe6; --dim: rgba(243, 239, 230, 0.62);
   --panel: rgba(10, 12, 15, 0.7); --panel-solid: #14171c; --line: rgba(255, 255, 255, 0.12);
   --accent: #f0a23a; --danger: #ff4b3a; --xhair: #4cff6a;
+  --xh-len: 7px; --xh-thick: 2px; --xh-off: -1px; --xh-gap: 4px; --xh-dot: none; --xh-ol: 0 0 0 1px rgba(0, 0, 0, 0.8);
   --mono: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, monospace;
   --sans: "Segoe UI", system-ui, -apple-system, "Helvetica Neue", Arial, sans-serif;
 }
@@ -62,12 +63,77 @@ html, body { width: 100%; height: 100%; overflow: hidden; background: #000; colo
 .kf em { font-style: normal; font-size: 12px; color: var(--dim); }
 .kf .tag { font-size: 10px; font-weight: 700; text-transform: uppercase; color: #ddd; background: rgba(255, 255, 255, 0.14); padding: 1px 4px; border-radius: 2px; }
 .kf .tag.hs { color: #fff; background: var(--danger); }
-/* static crosshair */
-#crosshair { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
-#crosshair i { position: absolute; background: var(--xhair); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.75); }
-#crosshair .l, #crosshair .r { width: 7px; height: 2px; top: -1px; }
-#crosshair .t, #crosshair .b { width: 2px; height: 7px; left: -1px; }
-#crosshair .l { right: 4px; } #crosshair .r { left: 4px; } #crosshair .t { bottom: 4px; } #crosshair .b { top: 4px; }
+/* static crosshair: shape comes from the --xh-* variables set in settings (no dynamic spread) */
+#crosshair { position: absolute; left: 50%; top: 50%; }
+.xh { width: 0; height: 0; }
+.xh i { position: absolute; background: var(--xhair); box-shadow: var(--xh-ol); }
+.xh .l, .xh .r { width: var(--xh-len); height: var(--xh-thick); top: var(--xh-off); }
+.xh .t, .xh .b { width: var(--xh-thick); height: var(--xh-len); left: var(--xh-off); }
+.xh .l { right: var(--xh-gap); } .xh .r { left: var(--xh-gap); } .xh .t { bottom: var(--xh-gap); } .xh .b { top: var(--xh-gap); }
+.xh .d { display: var(--xh-dot); width: var(--xh-thick); height: var(--xh-thick); left: var(--xh-off); top: var(--xh-off); }
+/* crosshair editor */
+#settings-modal .panel { max-height: 94vh; overflow: auto; }
+.xh-edit { padding: 10px 12px; border: 1px solid var(--line); border-radius: 6px; }
+.xh-edit .slider { margin-bottom: 6px; }
+.xh-preview { position: relative; height: 96px; margin-bottom: 10px; border-radius: 5px; overflow: hidden;
+  background: linear-gradient(180deg, #8fa3b4 0 46%, #7d776b 46% 100%); }
+.xh-preview::after { content: ''; position: absolute; left: 58%; top: 18%; width: 22%; height: 60%; background: #5b5348; }
+.xh-preview .xh { position: absolute; left: 50%; top: 50%; z-index: 1; }
+.xh-row { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+.xh-row .check { margin: 0; }
+.xh-col { display: flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); flex: 1; }
+.xh-col input { height: 28px; }
+/* kill feed extras */
+.kf .plus { font-style: normal; color: var(--dim); margin: 0 -3px; }
+.kf span.me { text-decoration: underline; text-underline-offset: 3px; }
+.kf.victim { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.5); background: rgba(70, 0, 0, 0.75); }
+/* round-end damage report */
+#dmg-report { position: absolute; right: 14px; top: 250px; width: 300px; padding: 10px 12px; background: rgba(10, 12, 15, 0.85); border: 1px solid var(--line); border-radius: 6px; font-size: 13px; animation: slidein 0.25s ease-out; }
+@keyframes slidein { from { opacity: 0; transform: translateX(16px); } }
+.dr-head { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px solid var(--line); }
+.dr-head b { font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); }
+.dr-head span { font-size: 12px; }
+#dmg-report table { width: 100%; border-collapse: collapse; }
+#dmg-report th { text-align: left; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); font-weight: 500; padding: 2px 4px; }
+#dmg-report td { padding: 3px 4px; font-family: var(--mono); white-space: nowrap; }
+#dmg-report td:first-child { font-family: var(--sans); font-weight: 600; }
+#dmg-report td b { margin-right: 5px; } #dmg-report td small { color: var(--dim); font-size: 11px; }
+#dmg-report tr.quiet { opacity: 0.4; } #dmg-report .nil { color: var(--dim); }
+#dmg-report em { font-style: normal; font-size: 9px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; margin-left: 6px; padding: 1px 4px; border-radius: 2px; color: #fff; }
+#dmg-report em.k { background: rgba(255, 255, 255, 0.18); } #dmg-report em.kd { background: var(--danger); }
+#dmg-report .t { color: var(--t); } #dmg-report .ct { color: var(--ct); }
+/* team economy during buy time */
+#team-eco { position: absolute; left: 14px; top: 256px; width: 220px; padding: 8px 10px; background: var(--panel); border-radius: 5px; font-size: 12px; }
+.eco-head { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--dim); margin-bottom: 4px; }
+.eco-row { display: grid; grid-template-columns: 1fr auto; column-gap: 8px; padding: 2px 0; }
+.eco-row b { font-family: var(--mono); color: #8fe38a; }
+.eco-row small { grid-column: 1 / 3; color: var(--ink); opacity: 0.75; font-size: 11px; }
+.eco-row small.dim { opacity: 0.4; }
+.eco-row.me span { font-weight: 700; }
+/* radio menu + team chat */
+#radio { position: absolute; left: 14px; bottom: 290px; min-width: 210px; padding: 8px 12px; background: rgba(10, 12, 15, 0.85); border-left: 3px solid var(--accent); border-radius: 4px; font-size: 13px; }
+#radio h4 { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; }
+#radio div { padding: 2px 0; } #radio div.dim { color: var(--dim); }
+#chat { position: absolute; left: 14px; bottom: 140px; width: 380px; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }
+.chat-line { padding: 2px 8px; background: rgba(0, 0, 0, 0.4); border-radius: 3px; transition: opacity 0.8s; }
+.chat-line.fade { opacity: 0; }
+.chat-line b { margin-right: 6px; } .chat-line small { color: var(--dim); margin-right: 6px; font-size: 11px; }
+.chat-line b.t { color: var(--t); } .chat-line b.ct { color: var(--ct); }
+/* pings (projected each frame) */
+#pings { position: absolute; inset: 0; overflow: hidden; }
+.ping { position: absolute; left: 0; top: 0; width: 0; height: 0; }
+.ping i { position: absolute; left: -8px; top: -8px; width: 16px; height: 16px; transform: rotate(45deg); border: 2px solid #ffd36a; background: rgba(255, 211, 106, 0.25); box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); transition: transform 0.25s; }
+.ping.fresh i { transform: rotate(45deg) scale(1.7); }
+.ping.enemy i { border-color: #ff5a4a; background: rgba(255, 90, 74, 0.3); }
+.ping small { position: absolute; left: -30px; top: 12px; width: 60px; text-align: center; font: 600 11px var(--mono); color: #fff; }
+/* scoreboard round history */
+.sb-hist { grid-column: 1 / -1; display: flex; flex-direction: column; gap: 3px; padding-bottom: 8px; border-bottom: 1px solid var(--line); overflow-x: auto; }
+.rh-row { display: flex; align-items: center; gap: 2px; }
+.rh-row b { width: 44px; flex: none; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--dim); font-weight: 500; }
+.rh-c { width: 18px; height: 18px; flex: none; border-radius: 3px; background: rgba(255, 255, 255, 0.04); display: grid; place-items: center; }
+.rh-c.half { margin-right: 8px; }
+.rh-c.on.t { background: rgba(232, 176, 74, 0.25); color: var(--t); } .rh-c.on.ct { background: rgba(111, 162, 255, 0.25); color: var(--ct); }
+.rh-c svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 #dmg-dir { position: absolute; left: 50%; top: 50%; width: 260px; height: 260px; opacity: 0; transform: translate(-50%, -50%); }
 #dmg-dir .arc { position: absolute; inset: 0; border-radius: 50%; border: 6px solid transparent; border-top-color: rgba(255, 40, 30, 0.85); filter: blur(1px); }
 #center-msg { position: absolute; top: 22%; width: 100%; text-align: center; font-size: 40px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase; }

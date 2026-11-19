@@ -374,10 +374,22 @@ function buildVmOptions() {
     el.oninput = el.onchange = () => { G[el.dataset.vm] = el.type === 'checkbox' ? el.checked : +el.value; syncMenu(); saveSettings(); };
   }
 }
+const XH_KEYS = ['xhLen', 'xhThick', 'xhGap', 'xhDot', 'xhOutline'];
+// the crosshair is drawn by CSS from these variables, so the HUD and the settings preview always match
+function applyCrosshair() {
+  const st = document.documentElement.style, th = clamp(Math.round(+G.xhThick || 2), 1, 6);
+  st.setProperty('--xhair', G.crosshairColor);
+  st.setProperty('--xh-len', clamp(Math.round(+G.xhLen || 7), 1, 20) + 'px');
+  st.setProperty('--xh-thick', th + 'px');
+  st.setProperty('--xh-off', -Math.floor(th / 2) + 'px'); // whole pixels keep the bars crisp
+  st.setProperty('--xh-gap', clamp(Math.round(+G.xhGap || 0), 0, 16) + 'px');
+  st.setProperty('--xh-dot', G.xhDot ? 'block' : 'none');
+  st.setProperty('--xh-ol', G.xhOutline ? '0 0 0 1px rgba(0, 0, 0, 0.8)' : 'none');
+}
 function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem('strikepoint3d') || '{}');
-    for (const k of ['sens', 'difficulty', 'volume', 'crosshairColor', 'quality', 'fullscreen']) if (s[k] !== undefined) G[k] = s[k];
+    for (const k of ['sens', 'difficulty', 'volume', 'crosshairColor', 'quality', 'fullscreen', ...XH_KEYS]) if (s[k] !== undefined) G[k] = s[k];
     for (const k in VM_DEFAULTS) if (typeof s[k] === typeof VM_DEFAULTS[k] && (typeof s[k] !== 'number' || isFinite(s[k]))) G[k] = s[k];
     if (s.mode && MODES[s.mode]) LOBBY.mode = s.mode;
     if (s.side) LOBBY.side = s.side;
@@ -385,7 +397,7 @@ function loadSettings() {
   } catch (e) { /* storage unavailable */ }
 }
 function saveSettings() {
-  try { localStorage.setItem('strikepoint3d', JSON.stringify({ fullscreen: G.fullscreen, sens: G.sens, difficulty: G.difficulty, volume: G.volume, crosshairColor: G.crosshairColor, quality: G.quality, vmFov: G.vmFov, vmX: G.vmX, vmY: G.vmY, vmZ: G.vmZ, vmCenter: G.vmCenter, hitMarker: G.hitMarker, mode: LOBBY.mode, side: LOBBY.side, pool: [...LOBBY.pool] })); } catch (e) { /* ignore */ }
+  try { localStorage.setItem('strikepoint3d', JSON.stringify({ fullscreen: G.fullscreen, sens: G.sens, difficulty: G.difficulty, volume: G.volume, crosshairColor: G.crosshairColor, xhLen: G.xhLen, xhThick: G.xhThick, xhGap: G.xhGap, xhDot: G.xhDot, xhOutline: G.xhOutline, quality: G.quality, vmFov: G.vmFov, vmX: G.vmX, vmY: G.vmY, vmZ: G.vmZ, vmCenter: G.vmCenter, hitMarker: G.hitMarker, mode: LOBBY.mode, side: LOBBY.side, pool: [...LOBBY.pool] })); } catch (e) { /* ignore */ }
 }
 function syncMenu() {
   $('opt-diff').value = G.difficulty; $('opt-quality').value = G.quality; $('opt-xcol').value = G.crosshairColor;
@@ -393,9 +405,12 @@ function syncMenu() {
   for (const id of ['sens-val', 'pause-sens-val']) $(id).textContent = (+G.sens).toFixed(2);
   $('opt-vol').value = G.volume;
   $('opt-fs').checked = G.fullscreen !== false;
-  document.documentElement.style.setProperty('--xhair', G.crosshairColor);
   for (const el of document.querySelectorAll('[data-vm]')) { const v = G[el.dataset.vm]; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; }
   for (const o of document.querySelectorAll('[data-vmo]')) { const k = o.dataset.vmo, v = +G[k]; o.textContent = k === 'vmFov' ? String(v) : (v > 0 ? '+' : '') + v.toFixed(1); }
+  $('opt-xlen').value = G.xhLen; $('opt-xthick').value = G.xhThick; $('opt-xgap').value = G.xhGap;
+  $('xlen-val').textContent = G.xhLen; $('xthick-val').textContent = G.xhThick; $('xgap-val').textContent = G.xhGap;
+  $('opt-xdot').checked = !!G.xhDot; $('opt-xoutline').checked = !!G.xhOutline;
+  applyCrosshair();
 }
 function initMenus() {
   for (const b of document.querySelectorAll('[data-tab]')) b.onclick = () => { SFX.init(); setTab(b.dataset.tab); };
@@ -404,6 +419,8 @@ function initMenus() {
   $('opt-diff').onchange = (e) => { G.difficulty = +e.target.value; saveSettings(); renderPlay(); };
   $('opt-quality').onchange = (e) => { G.quality = +e.target.value; applyQuality(); saveSettings(); };
   $('opt-xcol').oninput = (e) => { G.crosshairColor = e.target.value; syncMenu(); saveSettings(); };
+  for (const [id, key] of [['opt-xlen', 'xhLen'], ['opt-xthick', 'xhThick'], ['opt-xgap', 'xhGap']]) $(id).oninput = (e) => { G[key] = +e.target.value; syncMenu(); saveSettings(); };
+  for (const [id, key] of [['opt-xdot', 'xhDot'], ['opt-xoutline', 'xhOutline']]) $(id).onchange = (e) => { G[key] = e.target.checked; syncMenu(); saveSettings(); };
   $('opt-vol').oninput = (e) => { G.volume = +e.target.value; SFX.setVolume(G.volume); saveSettings(); };
   $('opt-fs').onchange = (e) => { G.fullscreen = e.target.checked; saveSettings(); if (G.fullscreen) goFullscreen(); else if (document.fullscreenElement) document.exitFullscreen(); };
   // browsers only allow fullscreen after a click or key press, and Esc leaves it. So every
@@ -438,6 +455,7 @@ function toMenu() {
   SFX.playMusic('lobby');
   SFX.updateAmbience(0, 0, false);
   for (const id of ['pause', 'matchover', 'hud', 'buy', 'scope', 'scoreboard', 'found']) $(id).classList.add('hidden');
+  if (typeof resetComms === 'function') resetComms();
   $('menu').classList.remove('hidden');
   for (const a of G.agents) if (a.model) a.model.root.visible = false;
   FX.reset();

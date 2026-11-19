@@ -19,16 +19,20 @@ function popMoney(amt) {
 }
 function onMatchStart() {
   $('menu').classList.add('hidden'); $('matchover').classList.add('hidden'); $('hud').classList.remove('hidden');
-  $('killfeed').innerHTML = ''; HUD.lastTeams = '';
+  $('killfeed').innerHTML = ''; $('chat').innerHTML = ''; HUD.lastTeams = '';
 }
-function addKillfeed(k, v, key, hs, info, blind, noscope) {
+function addKillfeed(k, v, key, hs, info, blind, noscope, assisters) {
   const el = document.createElement('div');
-  el.className = 'kf' + ((k && k.isPlayer) || v.isPlayer ? ' mine' : '');
+  const ast = assisters || [];
+  // highlight anything the player took part in; dying gets its own darker style
+  const involved = (k && k.isPlayer) || ast.some((a) => a.isPlayer);
+  el.className = 'kf' + (v.isPlayer ? ' mine victim' : involved ? ' mine' : '');
   // FFA has no sides, so names are neutral except your own
-  const name = (a) => `<span class="${RULES.ffa ? (a.isPlayer ? 'you' : 'ffa') : a.team === 'T' ? 't' : 'ct'}">${a.name}</span>`;
+  const name = (a) => `<span class="${RULES.ffa ? (a.isPlayer ? 'you' : 'ffa') : a.team === 'T' ? 't' : 'ct'}${a.isPlayer ? ' me' : ''}">${a.name}</span>`;
+  const astHTML = ast.length && k && k !== v ? ast.map((a) => `<i class="plus">+</i>${name(a)}`).join('') : '';
   const wname = key === 'c4' ? 'C4' : WEAPONS[key] ? WEAPONS[key].name : '';
   const tags = [blind ? '<b class="tag">blind</b>' : '', info.smoke ? '<b class="tag">smoke</b>' : '', noscope ? '<b class="tag">no-scope</b>' : '', info.wallbang ? '<b class="tag">wallbang</b>' : '', hs ? '<b class="tag hs">HS</b>' : ''].join('');
-  el.innerHTML = `${k && k !== v ? name(k) : ''}<em>${wname}</em>${tags}${name(v)}`;
+  el.innerHTML = `${k && k !== v ? name(k) : ''}${astHTML}<em>${wname}</em>${tags}${name(v)}`;
   const feed = $('killfeed'); feed.prepend(el);
   while (feed.children.length > 6) feed.lastChild.remove();
   setTimeout(() => el.classList.add('fade'), 7000);
@@ -92,6 +96,7 @@ function drawRadar(v) {
     g.fillStyle = b.state === 'planted' && (G.time * 4) % 2 < 1 ? '#ff2a1a' : '#ff9a2a';
     g.fillRect(src.x * RADAR_PX - 6, src.z * RADAR_PX - 5, 12, 10);
   }
+  drawRadarPings(g);
   g.restore();
   g.fillStyle = '#fff'; g.beginPath(); g.moveTo(S / 2, S / 2 - 9); g.lineTo(S / 2 + 6, S / 2 + 7); g.lineTo(S / 2, S / 2 + 3); g.lineTo(S / 2 - 6, S / 2 + 7); g.closePath(); g.fill();
   g.strokeStyle = 'rgba(255,255,255,0.25)'; g.lineWidth = 2; g.beginPath(); g.arc(S / 2, S / 2, S / 2 - 2, 0, TAU); g.stroke();
@@ -106,14 +111,71 @@ function dmBoardHTML(final) {
   }).join('');
   return `<div class="sb-team dm"><div class="sb-head"><b>Deathmatch</b><span>${RULES.killLimit} to win</span></div><table><tr><th>#</th><th>Player</th><th>K</th><th>D</th><th>K/D</th><th>Damage</th></tr>${rows}</table></div>`;
 }
+// what an agent is carrying, at buy-menu prices (scoreboard "Eq" column)
+function equipValue(a) {
+  let v = 0;
+  for (const s of ['primary', 'secondary', 'taser']) if (a.inv[s] && WEAPONS[a.inv[s]].price) v += WEAPONS[a.inv[s]].price;
+  for (const k of NADE_KEYS) v += (a.nades[k] || 0) * WEAPONS[k].price;
+  if (a.armor > 0) v += a.helmet ? GEAR.vesthelm.price : GEAR.vest.price;
+  if (a.defuser) v += GEAR.defuser.price;
+  return v;
+}
+// small original line icons for how a round ended
+const ROUND_ICONS = {
+  elim: '<path d="M3 3 13 13M13 3 3 13"/>',
+  bomb: '<circle cx="8" cy="8" r="3.2"/><path d="M8 1v2.5M8 12.5V15M1 8h2.5M12.5 8H15M3 3l1.8 1.8M11.2 11.2 13 13M13 3l-1.8 1.8M4.8 11.2 3 13"/>',
+  defuse: '<path d="M8 1.5 14 5v6l-6 3.5L2 11V5z"/><path d="m5.5 8 2 2 3.5-4"/>',
+  time: '<circle cx="8" cy="8" r="6"/><path d="M8 4.5V8l2.6 1.8"/>',
+};
+const roundHow = (reason) => reason === 'Target destroyed' ? 'bomb' : reason === 'Bomb defused' ? 'defuse' : reason === 'Time ran out' ? 'time' : 'elim';
+function roundHistoryHTML() {
+  if (!G.history.length) return '';
+  const cell = (h, i, mineRow) => {
+    // a thicker gap after each half so side swaps read at a glance
+    const sep = i === REG_HALF - 1 || (i >= REG_HALF * 2 && (i - REG_HALF * 2) % OT_HALF === OT_HALF - 1) ? ' half' : '';
+    if (h.mine !== mineRow) return `<span class="rh-c${sep}"></span>`;
+    const how = roundHow(h.reason);
+    return `<span class="rh-c on ${h.winner === 'T' ? 't' : 'ct'}${sep}" title="Round ${i + 1}: ${h.reason}"><svg viewBox="0 0 16 16">${ROUND_ICONS[how]}</svg></span>`;
+  };
+  return `<div class="sb-hist"><div class="rh-row"><b>Us</b>${G.history.map((h, i) => cell(h, i, true)).join('')}</div>
+    <div class="rh-row"><b>Them</b>${G.history.map((h, i) => cell(h, i, false)).join('')}</div></div>`;
+}
 function scoreboardHTML(final) {
   if (RULES.ffa) return dmBoardHTML(final);
   const rows = (team) => G.agents.filter((a) => a.team === team).sort((a, b) => b.kills - a.kills || a.deaths - b.deaths).map((a) => {
     const adr = a.roundsPlayed ? Math.round(a.totalDmg / Math.max(1, G.roundsPlayed || 1)) : 0;
     const stars = a.mvps ? `★${a.mvps > 1 ? a.mvps : ''}` : '';
-    return `<tr class="${a.isPlayer ? 'me' : ''} ${a.alive || final ? '' : 'dead'}"><td>${a.name}</td><td>${a.kills}</td><td>${a.assists}</td><td>${a.deaths}</td><td>${adr}</td><td class="mvp">${stars}</td><td>${team === G.player.team || final ? '$' + a.money : ''}</td></tr>`;
+    const hsp = a.kills > 0 ? Math.round((a.hsKills / a.kills) * 100) + '%' : '-';
+    const own = team === G.player.team || final;
+    return `<tr class="${a.isPlayer ? 'me' : ''} ${a.alive || final ? '' : 'dead'}"><td>${a.name}</td><td>${a.kills}</td><td>${a.assists}</td><td>${a.deaths}</td><td>${adr}</td><td>${hsp}</td><td class="mvp">${stars}</td><td>${own && !final ? '$' + equipValue(a) : ''}</td><td>${own ? '$' + a.money : ''}</td></tr>`;
   }).join('');
-  return ['CT', 'T'].map((team) => `<div class="sb-team ${team === 'T' ? 't' : 'ct'}"><div class="sb-head"><b>${team === 'T' ? 'Attackers' : 'Defenders'}</b><span>${G.score[team]}</span></div><table><tr><th>Player</th><th>K</th><th>A</th><th>D</th><th>ADR</th><th>MVP</th><th>Money</th></tr>${rows(team)}</table></div>`).join('');
+  return roundHistoryHTML() + ['CT', 'T'].map((team) => `<div class="sb-team ${team === 'T' ? 't' : 'ct'}"><div class="sb-head"><b>${team === 'T' ? 'Attackers' : 'Defenders'}</b><span>${G.score[team]}</span></div><table><tr><th>Player</th><th>K</th><th>A</th><th>D</th><th>ADR</th><th>HS</th><th>MVP</th><th>Eq</th><th>Money</th></tr>${rows(team)}</table></div>`).join('');
+}
+
+// ---------------------------------------------------------- round-end damage report
+function showDamageReport() {
+  const p = G.player, pid = p.id;
+  const fmt = (r) => (r && r.dmg ? `<b>${r.dmg}</b><small>${r.hits} hit${r.hits === 1 ? '' : 's'}</small>` : '<span class="nil">-</span>');
+  const rows = G.agents.filter((e) => e.team !== p.team).map((e) => {
+    const given = G.rdmg[pid + '>' + e.id], taken = G.rdmg[e.id + '>' + pid];
+    const tags = (e.killer === p && !e.alive ? '<em class="k">killed</em>' : '') + (p.killer === e ? '<em class="kd">killed you</em>' : '');
+    return `<tr class="${given || taken ? '' : 'quiet'}"><td class="${e.team === 'T' ? 't' : 'ct'}">${e.name}${tags}</td><td>${fmt(given)}</td><td>${fmt(taken)}</td></tr>`;
+  }).join('');
+  const k = p.killer;
+  const head = !p.alive ? (k && k !== p ? `Killed by <span class="${k.team === 'T' ? 't' : 'ct'}">${k.name}</span>${k.alive ? ` · ${Math.max(0, Math.ceil(k.hp))} HP left` : ''}` : 'You died') : 'You survived';
+  $('dmg-report').innerHTML = `<div class="dr-head"><b>Round damage</b><span>${head}</span></div><table><tr><th>Enemy</th><th>Dealt</th><th>Received</th></tr>${rows}</table>`;
+  $('dmg-report').classList.remove('hidden');
+  HUD.dmgRepT = 5;
+}
+function hideDamageReport() { HUD.dmgRepT = 0; $('dmg-report').classList.add('hidden'); }
+
+// ---------------------------------------------------------- team economy (buy time only)
+function teamEcoHTML() {
+  const mates = G.agents.filter((a) => a.team === G.player.team).sort((a, b) => b.money - a.money);
+  return '<div class="eco-head">Team money</div>' + mates.map((a) => {
+    const gun = a.inv.primary ? WEAPONS[a.inv.primary].name : a.inv.secondary ? WEAPONS[a.inv.secondary].name : '';
+    return `<div class="eco-row${a.isPlayer ? ' me' : ''}"><span>${a.name}</span><b>$${a.money}</b><small class="${a.inv.primary ? '' : 'dim'}">${gun}</small></div>`;
+  }).join('');
 }
 
 // ---------------------------------------------------------- per-frame HUD
@@ -226,6 +288,12 @@ function updateHUD(dt) {
   HUD.smokeOv = lerp(HUD.smokeOv || 0, inSmoke, Math.min(1, dt * 6));
   $('smoke-ov').style.opacity = (HUD.smokeOv * 0.97).toFixed(3);
   if (G.boardOpen) setHTML('scoreboard', scoreboardHTML(false));
+  // team economy: only while buying is still possible this round
+  const ecoOn = (G.phase === 'freeze' || G.phase === 'live') && buyTimeLeft() > 0;
+  setClass($('team-eco'), 'hidden', !ecoOn);
+  if (ecoOn) setHTML('team-eco', teamEcoHTML());
+  if (HUD.dmgRepT > 0) { HUD.dmgRepT -= dt; if (HUD.dmgRepT <= 0) hideDamageReport(); }
+  updateComms(dt);
   drawRadar(v);
 }
 

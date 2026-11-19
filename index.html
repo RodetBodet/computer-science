@@ -17,6 +17,7 @@
 
     <!-- ===== HUD ===== -->
     <div id="hud" class="hidden">
+      <div id="pings"></div>
       <div id="radar-box">
         <canvas id="radar" width="230" height="230"></canvas>
         <div id="location"></div>
@@ -28,7 +29,11 @@
       </div>
       <div id="dm-board" class="hidden"></div>
       <div id="killfeed"></div>
-      <div id="crosshair"><i class="l"></i><i class="r"></i><i class="t"></i><i class="b"></i></div>
+      <div id="dmg-report" class="hidden"></div>
+      <div id="team-eco" class="hidden"></div>
+      <div id="radio" class="hidden"></div>
+      <div id="chat"></div>
+      <div id="crosshair" class="xh"><i class="l"></i><i class="r"></i><i class="t"></i><i class="b"></i><i class="d"></i></div>
       <div id="hitmarker"><i></i><i></i><i></i><i></i></div>
       <div id="dmg-dir"><div class="arc"></div></div>
       <div id="center-msg"></div>
@@ -134,7 +139,18 @@
           <label class="field">Graphics
             <select id="opt-quality"><option value="0">Fast</option><option value="1" selected>Balanced</option><option value="2">High</option></select>
           </label>
-          <label class="field">Crosshair color <input type="color" id="opt-xcol" value="#4cff6a"></label>
+          <div class="xh-edit">
+            <div class="label">Crosshair</div>
+            <div class="xh-preview"><div class="xh"><i class="l"></i><i class="r"></i><i class="t"></i><i class="b"></i><i class="d"></i></div></div>
+            <label class="slider">Length <input type="range" id="opt-xlen" min="1" max="20" step="1" value="7"><output id="xlen-val">7</output></label>
+            <label class="slider">Thickness <input type="range" id="opt-xthick" min="1" max="6" step="1" value="2"><output id="xthick-val">2</output></label>
+            <label class="slider">Gap <input type="range" id="opt-xgap" min="0" max="16" step="1" value="4"><output id="xgap-val">4</output></label>
+            <div class="xh-row">
+              <label class="check"><input type="checkbox" id="opt-xdot"> Center dot</label>
+              <label class="check"><input type="checkbox" id="opt-xoutline" checked> Outline</label>
+              <label class="xh-col">Color <input type="color" id="opt-xcol" value="#4cff6a"></label>
+            </div>
+          </div>
           <label class="check"><input type="checkbox" id="opt-fs" checked> Fullscreen</label>
           <label class="slider">Sensitivity <input type="range" id="opt-sens" min="0.3" max="6" step="0.05" value="1.6"><output id="sens-val">1.60</output></label>
           <label class="slider">Volume <input type="range" id="opt-vol" min="0" max="1" step="0.05" value="0.6"></label>
@@ -143,6 +159,7 @@
             <span><kbd>WASD</kbd> move</span><span><kbd>Shift</kbd> walk</span><span><kbd>Ctrl</kbd> crouch</span><span><kbd>Space</kbd> jump</span>
             <span><kbd>LMB</kbd> fire</span><span><kbd>RMB</kbd> scope / stab / lob</span><span><kbd>R</kbd> reload</span><span><kbd>F</kbd> inspect</span>
             <span><kbd>1-5</kbd> <kbd>Q</kbd> weapons</span><span><kbd>G</kbd> drop</span><span><kbd>E</kbd> defuse / pick up</span><span><kbd>B</kbd> buy</span><span><kbd>Tab</kbd> scores</span>
+            <span><kbd>Z</kbd> <kbd>X</kbd> <kbd>C</kbd> radio</span><span><kbd>MMB</kbd> / <kbd>V</kbd> ping</span>
           </div>
           <button id="settings-close" class="primary">Done</button>
         </div>

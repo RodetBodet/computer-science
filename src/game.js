@@ -50,11 +50,18 @@ const G = {
   playerTeam: 'T', difficulty: 1, sens: 1.6, volume: 0.6, crosshairColor: '#4cff6a', quality: 1,
   // viewmodel: horizontal FOV (4:3), offsets in cm, centered pose; hit marker is opt-in
   vmFov: 68, vmX: 0, vmY: 0, vmZ: 0, vmCenter: false, hitMarker: false,
+  // static crosshair shape (pixels); defaults match the original hard-coded look
+  xhLen: 7, xhThick: 2, xhGap: 4, xhDot: false, xhOutline: true,
   phase: 'freeze', phaseT: 0, roundT: 0, round: 0, roundsPlayed: 0,
   score: { T: 0, CT: 0 }, lossCount: { T: 0, CT: 0 },
   agents: [], player: null, drops: [], killfeed: [],
   bomb: null, msg: null, tSite: 'A', intel: { A: -99, B: -99 }, roundKills: {}, lastWinner: null, mvp: null,
   buyOpen: false, boardOpen: false, specIdx: 0,
+  // per-round damage between pairs ("attId>victimId" -> { hits, dmg }) for the round-end report
+  rdmg: {},
+  // one entry per finished round: { winner, reason, mine } for the scoreboard strip
+  history: [],
+  pings: [],
 };
 const D = () => DIFFICULTY[G.difficulty];
 const CAM = { pos: new THREE.Vector3(), yaw: 0, pitch: 0, fov: 73.74, shake: 0, view: null };
@@ -66,7 +73,7 @@ function makeAgent(team, name, isPlayer) {
     id: nextId++, team, name, isPlayer, model: null,
     x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, yaw: 0, pitch: 0, onGround: true, duck: false, duckAmt: 0, eye: EYE_STAND, height: H_STAND, walking: false,
     alive: false, hp: 100, armor: 0, helmet: false, defuser: false, money: START_MONEY,
-    kills: 0, deaths: 0, assists: 0, mvps: 0, totalDmg: 0, roundsPlayed: 0, roundDmg: 0, dmgFrom: {},
+    kills: 0, deaths: 0, assists: 0, mvps: 0, hsKills: 0, totalDmg: 0, roundsPlayed: 0, roundDmg: 0, dmgFrom: {},
     inv: { primary: null, secondary: null, knife: 'knife', taser: null }, nades: {}, nadeSel: null, hasC4: false, slot: 'secondary', lastSlot: 'knife', ammo: {},
     weaponKey: 'knife', nextAttack: 0, reloadT: 0, reloadTotal: 0, drawT: 0, inspectT: 0, zoom: 0, rezoom: 0, recoilIdx: 0, lastShotT: -9, inacc: 0,
     punchP: 0, punchY: 0, kickP: 0, hurtP: 0, hurtY: 0, tagMod: 1, muzzleT: 0, throwT: 0, knifeT: 0, burnAcc: 0,
@@ -482,6 +489,11 @@ function applyDamage(v, att, key, dmg, zone, info = {}) {
     const foe = hostile(att, v);
     att.roundDmg += foe ? real : 0; att.totalDmg += foe ? real : 0;
     v.dmgFrom[att.id] = (v.dmgFrom[att.id] || 0) + real;
+    // fire ticks every few HP, so only count a new "hit" after a short gap to keep hit counts honest
+    const pk = att.id + '>' + v.id, pr = G.rdmg[pk] || (G.rdmg[pk] = { hits: 0, dmg: 0, lastFire: -9 });
+    pr.dmg += real;
+    if (!info.fire) pr.hits++;
+    else if (G.time - pr.lastFire > 0.8) { pr.hits++; pr.lastFire = G.time; } else pr.lastFire = G.time;
   }
   v.lastHitZone = zone;
   // view punch for the victim (much stronger without armor)
@@ -507,13 +519,14 @@ function killAgent(v, k, key, hs, info) {
   if (k && k !== v) {
     if (hostile(k, v) && k.isPlayer) trackEvent('kill', { hs, cat: WEAPONS[key] ? WEAPONS[key].cat : 'any' });
     if (hostile(k, v)) {
-      k.kills++; G.roundKills[k.id] = (G.roundKills[k.id] || 0) + 1;
+      k.kills++; if (hs) k.hsKills++; G.roundKills[k.id] = (G.roundKills[k.id] || 0) + 1;
       if (!RULES.ffa) addMoney(k, (WEAPONS[key] && WEAPONS[key].award) || 300); // no economy in deathmatch
     } else { k.kills--; addMoney(k, -300); }
   }
   // assists: 41+ damage from someone other than the killer
-  for (const id in v.dmgFrom) { const o = G.agents.find((x) => x.id == id); if (o && o !== k && hostile(o, v) && v.dmgFrom[id] >= 41) o.assists++; }
-  addKillfeed(k, v, key, hs, info || {}, k && k.blindT > 0.5, k && WEAPONS[key] && WEAPONS[key].cat === 'sniper' && !k.zoom);
+  const assisters = [];
+  for (const id in v.dmgFrom) { const o = G.agents.find((x) => x.id == id); if (o && o !== k && hostile(o, v) && v.dmgFrom[id] >= 41) { o.assists++; assisters.push(o); } }
+  addKillfeed(k, v, key, hs, info || {}, k && k.blindT > 0.5, k && WEAPONS[key] && WEAPONS[key].cat === 'sniper' && !k.zoom, assisters);
   SFX.play('death', { x: v.x, y: v.y + 1, z: v.z });
   if (!RULES.ffa) for (const b of G.agents) if (b.bot && b.alive && b.team === v.team) botTeammateDied(b, v, k); // no teammates in FFA
   if (v.isPlayer) onPlayerDeath();
@@ -640,6 +653,7 @@ function plantBomb(a) {
   addMoney(a, 300);
   if (a.isPlayer) trackEvent('objective', {});
   showMsg('The bomb has been planted', `Site ${b.site}`, 2.5, 't');
+  if (typeof commsBombPlanted === 'function') commsBombPlanted(a, b.site);
   SFX.play('planted');
   equip(a, bestSlot(a));
   for (const bot of G.agents) if (bot.bot && bot.alive) botBombPlanted(bot);
@@ -730,7 +744,7 @@ function startMatch() {
   for (const a of G.agents) if (a.bot) rollBotCosmetics(a);
   for (const a of G.agents) { a.model = makeSoldierModel(a.team); FX.scene.add(a.model.root); }
   G.score = { T: 0, CT: 0 }; G.lossCount = { T: 0, CT: 0 }; G.round = 0; G.roundsPlayed = 0; G.time = 0;
-  G.state = 'playing'; G.paused = false;
+  G.state = 'playing'; G.paused = false; G.history = [];
   if (typeof resetMatchLog === 'function') resetMatchLog();
   onMatchStart();
   startRound();
@@ -774,7 +788,9 @@ function startRound() {
   }
   G.pistolRound = G.roundsPlayed === 0 || G.roundsPlayed === REG_HALF;
   G.phase = 'freeze'; G.phaseT = FREEZE_TIME; G.roundT = ROUND_TIME;
-  G.intel = { A: -99, B: -99 }; G.roundKills = {}; G.defuser = null; G.mvp = null;
+  G.intel = { A: -99, B: -99 }; G.roundKills = {}; G.defuser = null; G.mvp = null; G.rdmg = {}; G.pings = [];
+  if (typeof hideDamageReport === 'function') hideDamageReport();
+  if (typeof resetComms === 'function') resetComms();
   FX.reset();
   for (const d of G.drops) FX.scene.remove(d.mesh);
   G.drops.length = 0;
@@ -830,6 +846,8 @@ function endRound(winner, reason) {
   if (!mvp) { let best = 0; for (const a of G.agents) if (a.team === winner && (G.roundKills[a.id] || 0) > best) { best = G.roundKills[a.id]; mvp = a; } }
   if (mvp) { mvp.mvps++; G.mvp = mvp; }
   const mine = winner === G.player.team;
+  G.history.push({ winner, reason, mine });
+  if (typeof showDamageReport === 'function') showDamageReport();
   if (mine) trackEvent('roundwin', { map: MAP_INFO.id });
   showMsg(winner === 'T' ? 'Attackers win' : 'Defenders win', reason + (mvp ? ` · MVP: ${mvp.name}` : ''), ROUND_END_TIME, winner === 'T' ? 't' : 'ct');
   SFX.play(mine ? 'win' : 'lose');

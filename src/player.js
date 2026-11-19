@@ -19,7 +19,8 @@ function updatePlayer(dt) {
   mouse.dx = 0; mouse.dy = 0;
   const frozen = G.phase === 'freeze' || p.planting > 0 || p.defusing;
   // ---- move ----
-  p.duck = !!(keys.KeyC || keys.ControlLeft || keys.ControlRight);
+  // C now opens the third radio menu, so crouch is Ctrl only
+  p.duck = !!(keys.ControlLeft || keys.ControlRight);
   p.walking = !!(keys.ShiftLeft || keys.ShiftRight);
   let f = 0, s = 0;
   if (!G.buyOpen && !frozen) {
@@ -97,6 +98,7 @@ function initInput() {
     if (document.pointerLockElement !== RENDER.canvas && !G.buyOpen) { lockPointer(); return; }
     if (e.button === 0) { mouse.left = true; mouse.leftDown = true; if (!G.player.alive) G.specIdx++; }
     if (e.button === 2) { mouse.right = true; mouse.rightDown = true; if (!G.player.alive) G.specIdx--; }
+    if (e.button === 1) { e.preventDefault(); if (G.player.alive) placePing(G.player); } // middle mouse: team ping
   });
   window.addEventListener('mouseup', (e) => { if (e.button === 0) mouse.left = false; if (e.button === 2) mouse.right = false; });
   window.addEventListener('contextmenu', (e) => { if (G.state === 'playing') e.preventDefault(); });
@@ -117,6 +119,7 @@ function initInput() {
     if (G.buyOpen) { buyKey(e); return; }
     if (e.code === 'Space') INPUT.jump = 1;
     if (!p.alive) return;
+    if (radioKey(e)) return; // radio menus own Z/X/C, V and the number keys while open
     if (e.code === 'KeyB') openBuy();
     if (e.code === 'KeyR') startReload(p);
     if (e.code === 'KeyF') { if (p.reloadT <= 0 && p.drawT <= 0) p.inspectT = 2.6; }

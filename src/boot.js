@@ -8,7 +8,7 @@ window.THREE = THREE_NS;
 window.GLTFLoader = GLTFLoader;
 window.SkeletonUtils = SkeletonUtils;
 
-const files = ['util', 'assets', 'post', 'maps', 'map', 'textures', 'world', 'weapons', 'effects', 'models', 'gltfmodels', 'cosmetics', 'progression', 'audio', 'game', 'bots', 'player', 'hud', 'lobby', 'main'];
+const files = ['util', 'assets', 'post', 'maps', 'map', 'textures', 'world', 'weapons', 'effects', 'models', 'gltfmodels', 'cosmetics', 'progression', 'audio', 'game', 'bots', 'player', 'hud', 'comms', 'lobby', 'main'];
 for (const f of files) {
   await new Promise((resolve, reject) => {
     const s = document.createElement('script');
