@@ -6,7 +6,7 @@
    disk, so when that happens the game falls back to its generated
    textures and synthesized sounds.
    ===================================================================== */
-const ASSETS = { ok: false, tex: {}, sky: null, sunDir: null, sounds: {} };
+const ASSETS = { ok: false, tex: {}, sky: null, sunDir: null, sounds: {}, music: {} };
 
 // material key -> [Poly Haven name, meters per tile, normal strength]
 const PBR_SET = {
@@ -16,6 +16,7 @@ const PBR_SET = {
   grate: ['metal_grate_rusty', 1.5, 1.2], metal: ['metal_plate', 2, 1], crate: ['brown_planks_05', 1.2, 1.3], pallet: ['brown_planks_05', 1.2, 1.3],
   container: ['container_side', 2.6, 1.3],
 };
+const MUSIC_FILES = ['lobby', 'match'];
 const SOUND_FILES = [
   'rifle_t', 'rifle_ct', 'pistol', 'deagle', 'smg', 'shotgun', 'scout', 'awp', 'silenced', 'silenced_rifle',
   'rifle_t_far', 'rifle_ct_far', 'pistol_far', 'awp_far', 'shotgun_far', 'smg_far',
@@ -106,6 +107,12 @@ async function loadAssets(progress) {
 async function loadSounds() {
   if (location.protocol === 'file:') return;
   const dec = new OfflineAudioContext(2, 44100, 44100);
+  await Promise.all(MUSIC_FILES.map(async (n) => {
+    try {
+      const r = await fetch(`assets/music/${n}.m4a`);
+      if (r.ok) ASSETS.music[n] = await dec.decodeAudioData(await r.arrayBuffer());
+    } catch (e) { /* no music: the game is silent there */ }
+  }));
   await Promise.all(SOUND_FILES.map(async (n) => {
     try {
       const r = await fetch(`assets/sounds/${n}.m4a`);

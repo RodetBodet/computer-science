@@ -311,6 +311,7 @@ function launchMatch(mapId) {
     $('loading').classList.add('hidden'); $('menu').classList.add('hidden');
     if (LOBBY.show) LOBBY.show.model.root.visible = false;
     SFX.startAmbience();
+    SFX.init(); SFX.playMusic('match');
     startMatch();
     lockPointer();
   }, 60);
@@ -372,16 +373,17 @@ function initMenus() {
   $('opt-xcol').oninput = (e) => { G.crosshairColor = e.target.value; syncMenu(); saveSettings(); };
   $('opt-vol').oninput = (e) => { G.volume = +e.target.value; SFX.setVolume(G.volume); saveSettings(); };
   $('opt-fs').onchange = (e) => { G.fullscreen = e.target.checked; saveSettings(); if (G.fullscreen) goFullscreen(); else if (document.fullscreenElement) document.exitFullscreen(); };
-  // browsers only allow fullscreen after a click or key press, so take the first one
-  const firstInput = () => { goFullscreen(); window.removeEventListener('pointerdown', firstInput, true); window.removeEventListener('keydown', firstInput, true); };
-  window.addEventListener('pointerdown', firstInput, true); window.addEventListener('keydown', firstInput, true);
+  // browsers only allow fullscreen after a click or key press, and Esc leaves it. So every
+  // click or key press puts the game back into fullscreen, unless the setting is turned off.
+  window.addEventListener('pointerdown', goFullscreen, true);
+  window.addEventListener('keydown', goFullscreen, true);
   for (const id of ['opt-sens', 'pause-sens']) $(id).oninput = (e) => { G.sens = +e.target.value; syncMenu(); saveSettings(); };
   $('tn-settings').onclick = () => $('settings-modal').classList.remove('hidden');
   $('settings-close').onclick = () => $('settings-modal').classList.add('hidden');
   $('tn-quit').onclick = () => $('quit-modal').classList.remove('hidden');
   $('quit-no').onclick = () => $('quit-modal').classList.add('hidden');
   $('quit-yes').onclick = () => { saveProgress(); window.close(); $('quit-msg').textContent = 'Progress saved. You can close this tab now.'; };
-  $('find-btn').onclick = () => { goFullscreen(); saveSettings(); findMatch(); };
+  $('find-btn').onclick = () => { goFullscreen(); saveSettings(); SFX.init(); SFX.playMusic('lobby'); findMatch(); };
   $('queue-cancel').onclick = cancelQueue;
   $('accept-btn').onclick = () => { goFullscreen(); acceptMatch(); };
   $('resume-btn').onclick = () => { SFX.init(); lockPointer(); };
@@ -390,6 +392,7 @@ function initMenus() {
   $('menu-btn').onclick = () => toMenu();
   $('buy-close').onclick = () => closeBuy(false);
   syncMenu();
+  SFX.playMusic('lobby'); // starts once audio is allowed (first click)
   setTab('home');
 }
 function goFullscreen() {
@@ -398,6 +401,7 @@ function goFullscreen() {
 }
 function toMenu() {
   G.state = 'menu'; G.paused = false; G.buyOpen = false;
+  SFX.playMusic('lobby');
   SFX.updateAmbience(0, 0, false);
   for (const id of ['pause', 'matchover', 'hud', 'buy', 'scope', 'scoreboard', 'found']) $(id).classList.add('hidden');
   $('menu').classList.remove('hidden');

@@ -25,6 +25,7 @@ const SFX = {
       for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
       this.noise = buf;
     } catch (e) { this.ctx = null; }
+    if (this.wantMusic) this.playMusic(this.wantMusic); // a track requested before audio was allowed starts now
   },
   // synthetic impulse response: exponential noise tail + discrete early echoes
   makeIR(seconds, decay, echoes, density) {
@@ -41,7 +42,20 @@ const SFX = {
     }
     return ir;
   },
-  setVolume(v) { this.volume = v; if (this.master) this.master.gain.value = v; },
+  setVolume(v) { this.volume = v; if (this.master) this.master.gain.value = v; if (this.musicGain) this.musicGain.gain.value = v * 0.35; },
+  // background music: one looping track at a time, crossfaded, kept below the sound effects
+  playMusic(name) {
+    this.wantMusic = name;
+    if (!this.ctx || !ASSETS.music[name]) return;
+    if (this.curMusic === name) return;
+    const ctx = this.ctx, t = ctx.currentTime;
+    if (!this.musicGain) { this.musicGain = ctx.createGain(); this.musicGain.gain.value = this.volume * 0.35; this.musicGain.connect(this.master); }
+    if (this.musicSrc) { const old = this.musicSrc, og = this.musicFade; og.gain.setTargetAtTime(0, t, 0.6); old.stop(t + 2.5); }
+    const src = ctx.createBufferSource(); src.buffer = ASSETS.music[name]; src.loop = true;
+    const fade = ctx.createGain(); fade.gain.setValueAtTime(0, t); fade.gain.setTargetAtTime(1, t, 0.8);
+    src.connect(fade); fade.connect(this.musicGain); src.start(t);
+    this.musicSrc = src; this.musicFade = fade; this.curMusic = name;
+  },
   // looping background beds: wind outside, water by the quay, a low hum indoors
   startAmbience() {
     if (!this.ctx || this.amb) return;
