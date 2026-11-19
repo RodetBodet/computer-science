@@ -146,6 +146,9 @@ function renderHome() {
   $('home-cards').innerHTML = cards.join('');
   for (const c of document.querySelectorAll('.hcard')) c.onclick = () => { if (c.dataset.map) LOBBY.pool = new Set([c.dataset.map]); setTab(c.dataset.go); };
 }
+// how many players a mode has and how to describe the line-up
+const modePlayers = (m) => (m.ffa ? m.players || 10 : (m.teamSize || 5) * 2);
+const modeLineup = (m) => (m.ffa ? `Free-for-all · ${modePlayers(m)} players` : `${m.teamSize || 5}v${m.teamSize || 5} with bots`);
 function renderPlay() {
   $('modes').innerHTML = Object.entries(MODES).map(([id, m]) => `<button class="mode ${LOBBY.mode === id ? 'on' : ''}" data-mode="${id}"><b>${m.name}</b><small>${m.desc}</small></button>`).join('');
   for (const b of document.querySelectorAll('.mode')) b.onclick = () => { LOBBY.mode = b.dataset.mode; saveSettings(); renderPlay(); };
@@ -160,7 +163,7 @@ function renderPlay() {
     wrap.appendChild(card);
   }
   for (const b of document.querySelectorAll('#side-seg button')) b.classList.toggle('on', b.dataset.team === LOBBY.side);
-  $('play-summary').innerHTML = `<b>${MODES[LOBBY.mode].name}</b> on ${[...LOBBY.pool].map((m) => MAP_DEFS[m]().name).join(', ')}<br><small>5v5 with bots · ${DIFFICULTY[G.difficulty].name}</small>`;
+  $('play-summary').innerHTML = `<b>${MODES[LOBBY.mode].name}</b> on ${[...LOBBY.pool].map((m) => MAP_DEFS[m]().name).join(', ')}<br><small>${modeLineup(MODES[LOBBY.mode])} · ${DIFFICULTY[G.difficulty].name}</small>`;
   $('find-btn').disabled = LOBBY.searching;
 }
 const LO_GROUPS = [['Knife', ['knife']], ['Pistols', ['glock', 'usp', 'p250', 'fiveseven', 'tec9', 'deagle']], ['SMGs', ['mac10', 'mp9', 'ump45', 'p90']], ['Heavy', ['nova', 'xm1014']], ['Rifles', ['galil', 'famas', 'ak47', 'm4a4', 'm4a1s', 'sg553', 'aug']], ['Snipers', ['ssg08', 'awp']]];
@@ -277,13 +280,14 @@ function matchFound() {
   const map = pick([...LOBBY.pool]);
   LOBBY.pending = map; LOBBY.accepted = false;
   const def = MAP_DEFS[map]();
-  $('found-map').innerHTML = `<b>${def.name}</b><span>${MODES[LOBBY.mode].name} · 5v5 with bots</span>`;
-  $('found-dots').innerHTML = Array.from({ length: 10 }, (_, i) => `<i data-i="${i}"></i>`).join('');
+  const mode = MODES[LOBBY.mode], n = modePlayers(mode);
+  $('found-map').innerHTML = `<b>${def.name}</b><span>${mode.name} · ${modeLineup(mode)}</span>`;
+  $('found-dots').innerHTML = Array.from({ length: n }, (_, i) => `<i data-i="${i}"></i>`).join('');
   $('accept-btn').disabled = false; $('accept-btn').textContent = 'Accept';
   $('found').classList.remove('hidden');
   SFX.play('go');
   const total = 15, t0 = performance.now();
-  const botAccept = Array.from({ length: 9 }, () => rand(0.6, 7));
+  const botAccept = Array.from({ length: n - 1 }, () => rand(0.6, 7));
   LOBBY.foundT = setInterval(() => {
     const e = (performance.now() - t0) / 1000;
     $('found-fill').style.width = Math.max(0, 100 - (e / total) * 100) + '%';
@@ -304,8 +308,8 @@ function launchMatch(mapId) {
   $('load-msg').textContent = `Loading ${MAP_DEFS[map]().name}…`;
   $('loading').classList.remove('hidden');
   setTimeout(() => {
+    applyMode(LOBBY.mode); // first: the radar built by loadMap only labels the mode's sites
     loadMap(map);
-    applyMode(LOBBY.mode);
     G.playerTeam = LOBBY.side === 'R' ? (Math.random() < 0.5 ? 'T' : 'CT') : LOBBY.side;
     saveSettings();
     $('loading').classList.add('hidden'); $('menu').classList.add('hidden');
@@ -321,16 +325,28 @@ function launchMatch(mapId) {
 function endMatch() {
   G.state = 'matchover';
   if (document.exitPointerLock) document.exitPointerLock();
-  const res = matchWinner();
-  const mine = G.player.team, won = res === mine, draw = res === 'draw';
-  $('mo-title').textContent = draw ? 'Draw' : won ? 'Victory' : 'Defeat';
-  $('mo-title').className = draw ? '' : won ? 'win' : 'lose';
-  $('mo-sub').textContent = `${MAP_INFO.name} · ${RULES.name} · Defenders ${G.score.CT} : ${G.score.T} Attackers`;
-  const p = PROFILE, margin = Math.abs(G.score.CT - G.score.T);
-  const k = (0.6 + G.difficulty * 0.3) * (LOBBY.mode === 'casual' ? 0.5 : 1);
-  const delta = Math.round(draw ? 0 : (won ? 1 : -1) * (18 + margin * 2) * k);
+  const p = PROFILE, k = (0.6 + G.difficulty * 0.3) * (RULES.rating === undefined ? 1 : RULES.rating);
+  let won, draw, delta;
+  if (RULES.ffa) {
+    // deathmatch: placement decides. 1st wins; the rating change is small and scales from
+    // + for the top half to - for the bottom half (RULES.rating keeps it well below team modes)
+    const rank = dmRanking(), place = rank.indexOf(G.player) + 1, mid = (rank.length + 1) / 2;
+    won = place === 1; draw = false;
+    delta = Math.round((mid - place) * 4 * k);
+    $('mo-title').textContent = won ? 'Victory' : `#${place} of ${rank.length}`;
+    $('mo-title').className = won ? 'win' : place <= 3 ? '' : 'lose';
+    $('mo-sub').textContent = `${MAP_INFO.name} · ${RULES.name} · ${G.player.kills} kills, ${G.player.deaths} deaths · winner: ${rank[0].name} (${rank[0].kills})`;
+    if (won) p.wins++; // only a deathmatch win counts toward your record
+  } else {
+    const res = matchWinner(), mine = G.player.team, margin = Math.abs(G.score.CT - G.score.T);
+    won = res === mine; draw = res === 'draw';
+    $('mo-title').textContent = draw ? 'Draw' : won ? 'Victory' : 'Defeat';
+    $('mo-title').className = draw ? '' : won ? 'win' : 'lose';
+    $('mo-sub').textContent = `${MAP_INFO.name} · ${RULES.name} · Defenders ${G.score.CT} : ${G.score.T} Attackers`;
+    delta = Math.round(draw ? 0 : (won ? 1 : -1) * (18 + margin * 2) * k);
+    if (draw) p.draws++; else if (won) p.wins++; else p.losses++;
+  }
   p.rating = Math.max(0, p.rating + delta);
-  if (draw) p.draws++; else if (won) p.wins++; else p.losses++;
   const rw = awardMatch(won ? 'win' : draw ? 'draw' : 'loss');
   $('mo-rating').innerHTML = `<span class="${delta > 0 ? 'up' : delta < 0 ? 'down' : ''}">${delta > 0 ? '+' : ''}${delta}</span> rating · ${p.rating} · ${tierOf(p.rating)}`;
   $('mo-xp').innerHTML = `<div class="xp-parts">${rw.parts.map(([n, v]) => `<span>${n}<b>+${v}</b></span>`).join('')}</div>

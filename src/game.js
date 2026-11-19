@@ -14,16 +14,29 @@ const WALK_MULT = 0.52, DUCK_MULT = 0.34;
 const BOMB_TIME = 40, PLANT_TIME = 3.2, DEFUSE_TIME = 10, KIT_DEFUSE_TIME = 5, ROUND_END_TIME = 6;
 const MAX_MONEY = 16000, OT_MONEY = 10000, OT_HALF = 3;
 // game modes (set from the lobby)
+// Optional per-mode keys: teamSize (players per side, default 5), sites (bombsites you may plant
+// on, default all), ffa (free-for-all deathmatch: no teams, rounds, bomb or economy),
+// rating (multiplier on the rating change).
 const MODES = {
-  competitive: { name: 'Competitive', desc: 'First to 13 rounds · overtime on a tie · full economy', half: 12, overtime: true, startMoney: 800, freeze: 12, roundTime: 115, buyTime: 20, freeArmor: false },
-  casual: { name: 'Casual', desc: 'First to 8 rounds · free armor and defuse kits · more starting money', half: 7, overtime: false, startMoney: 1000, freeze: 8, roundTime: 120, buyTime: 25, freeArmor: true },
-  short: { name: 'Short Match', desc: 'First to 9 rounds · a draw is possible · full economy', half: 8, overtime: false, startMoney: 800, freeze: 10, roundTime: 115, buyTime: 20, freeArmor: false },
+  competitive: { name: 'Competitive', desc: 'First to 13 rounds · sides swap after 12 · overtime on a tie · full economy', half: 12, overtime: true, startMoney: 800, freeze: 12, roundTime: 115, buyTime: 20, freeArmor: false, rating: 1 },
+  casual: { name: 'Casual', desc: 'First to 8 rounds · free armor and defuse kits · more starting money', half: 7, overtime: false, startMoney: 1000, freeze: 8, roundTime: 120, buyTime: 25, freeArmor: true, rating: 0.5 },
+  short: { name: 'Short Match', desc: 'First to 9 rounds · a draw is possible · full economy', half: 8, overtime: false, startMoney: 800, freeze: 10, roundTime: 115, buyTime: 20, freeArmor: false, rating: 1 },
+  wingman: { name: 'Wingman', desc: '2v2 on bombsite A only · first to 9 rounds · 1:30 rounds', half: 8, overtime: false, startMoney: 800, freeze: 10, roundTime: 90, buyTime: 20, freeArmor: false, teamSize: 2, sites: ['A'], rating: 0.75 },
+  deathmatch: { name: 'Deathmatch', desc: 'Free-for-all · 10 minutes or first to 40 kills · free guns, quick respawns', ffa: true, players: 10, killLimit: 40, half: 0, overtime: false, startMoney: 0, freeze: 3, roundTime: 600, buyTime: 0, freeArmor: true, rating: 0.4 },
 };
+// deathmatch timings (seconds)
+const DM_RESPAWN = 2, DM_PROTECT = 2, DM_PICK_TIME = 6, DM_DROP_LIFE = 15;
 let FREEZE_TIME = 12, ROUND_TIME = 115, BUY_TIME = 20, START_MONEY = 800, REG_HALF = 12, RULES = MODES.competitive;
 function applyMode(id) {
-  RULES = MODES[id] || MODES.competitive; G.mode = id;
+  RULES = MODES[id] || MODES.competitive; G.mode = MODES[id] ? id : 'competitive';
   FREEZE_TIME = RULES.freeze; ROUND_TIME = RULES.roundTime; BUY_TIME = RULES.buyTime; START_MONEY = RULES.startMoney; REG_HALF = RULES.half;
 }
+// Every "is this an enemy?" check goes through here so free-for-all only changes one rule:
+// in deathmatch everybody but yourself is hostile; in team modes the other team is.
+const hostile = (a, b) => !!a && !!b && a !== b && (RULES.ffa || a.team !== b.team);
+// the bombsite at this point, but only if the current mode allows planting there (Wingman: A only)
+const plantSiteAt = (x, z) => { const s = siteAt(x, z); return s && (!RULES.sites || RULES.sites.includes(s)) ? s : null; };
+const activeSites = () => RULES.sites || Object.keys(SITES);
 const DIFFICULTY = [
   { name: 'Easy', react: 0.55, aimErr: 3.2, turn: 260, hs: 0.15, spray: 0.3, burst: 3 },
   { name: 'Normal', react: 0.34, aimErr: 1.9, turn: 420, hs: 0.35, spray: 0.6, burst: 5 },
@@ -293,6 +306,7 @@ function fireWeapon(a, errYaw = 0, errPitch = 0) {
   const am = a.ammo[key];
   if (!am || am.mag <= 0) { if (a.isPlayer) SFX.play('empty'); a.nextAttack = G.time + 0.25; startReload(a); return false; }
   am.mag--;
+  a.protectT = 0; // shooting ends deathmatch spawn protection, so it can't be abused
   a.nextAttack = G.time + 60 / w.rpm; a.lastShotT = G.time; a.muzzleT = 0.05; a.inspectT = 0;
   const e = eyePos(a);
   const spread = inaccuracy(a, w);
@@ -339,7 +353,7 @@ function traceBullet(a, ox, oy, oz, dx, dy, dz, w, key, withTracer) {
   let lastExit = 0;
   for (const ev of events) {
     if (ev.v) {
-      if (ev.v.team === a.team) continue; // no friendly fire from bullets
+      if (!hostile(a, ev.v)) continue; // no friendly fire from bullets (everyone is hostile in deathmatch)
       if (key === 'taser' && ev.t > 3.6) { endT = ev.t; break; }
       const dist = ev.t / UNIT;
       const d = dmg * Math.pow(w.rangeMod, dist / 500);
@@ -373,7 +387,7 @@ function traceBullet(a, ox, oy, oz, dx, dy, dz, w, key, withTracer) {
   }
   // bullets cracking past your head
   const view = CAM.view;
-  if (view && view.alive && a !== view && view.team !== a.team && hitV !== view) {
+  if (view && view.alive && hostile(a, view) && hitV !== view) {
     const tx = view.x - ox, ty = view.y + view.eye - oy, tz = view.z - oz, t = tx * dx + ty * dy + tz * dz;
     if (t > 0 && t < endT && Math.hypot(tx - dx * t, ty - dy * t, tz - dz * t) < 1.4) SFX.play('whizz', { x: ox + dx * t, y: oy + dy * t, z: oz + dz * t });
   }
@@ -384,12 +398,12 @@ function muzzleWorld(a) {
   return { x: a.x + f.x * 0.7 + rx * 0.12, y: a.y + a.eye - 0.18 + f.y * 0.7, z: a.z + f.z * 0.7 + rz * 0.12 };
 }
 function knifeAttack(a, heavy) {
-  a.nextAttack = G.time + (heavy ? 1.1 : 0.48); a.knifeT = heavy ? 0.6 : 0.4;
+  a.nextAttack = G.time + (heavy ? 1.1 : 0.48); a.knifeT = heavy ? 0.6 : 0.4; a.protectT = 0;
   SFX.play('knife', a.isPlayer ? null : { x: a.x, y: a.y + 1, z: a.z });
   const e = eyePos(a); dirFromAngles(a.yaw, a.pitch, _dir);
   let best = null;
   for (const v of G.agents) {
-    if (!v.alive || v === a || v.team === a.team) continue;
+    if (!v.alive || !hostile(a, v)) continue;
     const r = rayAgent(v, e.x, e.y, e.z, _dir.x, _dir.y, _dir.z, heavy ? 1.6 : 1.9);
     if (r && (!best || r.t < best.t)) best = { v, t: r.t, zone: r.zone };
   }
@@ -423,6 +437,9 @@ function throwNade(a, power) {
 // ============================================================ DAMAGE
 function applyDamage(v, att, key, dmg, zone, info = {}) {
   if (!v.alive) return;
+  // deathmatch: fresh spawns are invulnerable for a moment, and once the match is decided
+  // nobody can take damage so the final leaderboard stays as announced
+  if (RULES.ffa && (v.protectT > G.time || G.phase === 'over')) return;
   const w = WEAPONS[key] || {};
   let d = dmg * (info.fire || info.blast || info.knife ? 1 : ZONE_MULT[zone] || 1);
   let armorHit = false;
@@ -439,7 +456,8 @@ function applyDamage(v, att, key, dmg, zone, info = {}) {
   v.hp -= d;
   v.tagMod = Math.min(v.tagMod, info.fire ? 0.8 : zone === 'leg' ? 0.6 : 0.45);
   if (att && att !== v) {
-    att.roundDmg += att.team !== v.team ? real : 0; att.totalDmg += att.team !== v.team ? real : 0;
+    const foe = hostile(att, v);
+    att.roundDmg += foe ? real : 0; att.totalDmg += foe ? real : 0;
     v.dmgFrom[att.id] = (v.dmgFrom[att.id] || 0) + real;
   }
   v.lastHitZone = zone;
@@ -459,18 +477,21 @@ function killAgent(v, k, key, hs, info) {
     v.model.deathSide = rand(-1, 1); v.model.deathT = 0;
   }
   if (G.bomb.defuser === v) { G.bomb.defuser = null; }
+  if (RULES.ffa) v.respawnAt = G.time + DM_RESPAWN;
   if (v.hasC4) dropC4(v);
   dropWeapon(v, v.inv.primary ? 'primary' : 'secondary', false);
   if (k && k !== v) {
-    if (k.team !== v.team && k.isPlayer) trackEvent('kill', { hs, cat: WEAPONS[key] ? WEAPONS[key].cat : 'any' });
-    if (k.team !== v.team) { k.kills++; addMoney(k, (WEAPONS[key] && WEAPONS[key].award) || 300); G.roundKills[k.id] = (G.roundKills[k.id] || 0) + 1; }
-    else { k.kills--; addMoney(k, -300); }
+    if (hostile(k, v) && k.isPlayer) trackEvent('kill', { hs, cat: WEAPONS[key] ? WEAPONS[key].cat : 'any' });
+    if (hostile(k, v)) {
+      k.kills++; G.roundKills[k.id] = (G.roundKills[k.id] || 0) + 1;
+      if (!RULES.ffa) addMoney(k, (WEAPONS[key] && WEAPONS[key].award) || 300); // no economy in deathmatch
+    } else { k.kills--; addMoney(k, -300); }
   }
   // assists: 41+ damage from someone other than the killer
-  for (const id in v.dmgFrom) { const o = G.agents.find((x) => x.id == id); if (o && o !== k && o.team !== v.team && v.dmgFrom[id] >= 41) o.assists++; }
+  for (const id in v.dmgFrom) { const o = G.agents.find((x) => x.id == id); if (o && o !== k && hostile(o, v) && v.dmgFrom[id] >= 41) o.assists++; }
   addKillfeed(k, v, key, hs, info || {}, k && k.blindT > 0.5, k && WEAPONS[key] && WEAPONS[key].cat === 'sniper' && !k.zoom);
   SFX.play('death', { x: v.x, y: v.y + 1, z: v.z });
-  for (const b of G.agents) if (b.bot && b.alive && b.team === v.team) botTeammateDied(b, v, k);
+  if (!RULES.ffa) for (const b of G.agents) if (b.bot && b.alive && b.team === v.team) botTeammateDied(b, v, k); // no teammates in FFA
   if (v.isPlayer) onPlayerDeath();
 }
 function addMoney(a, amt) {
@@ -566,7 +587,7 @@ function tryUseWeapon(a) {
 // ============================================================ NOISE
 function makeSound(src, x, z, radius, kind, fake) {
   for (const b of G.agents) {
-    if (!b.bot || !b.alive || b.team === src.team) continue;
+    if (!b.bot || !b.alive || !hostile(b, src)) continue; // bots only react to enemy noise
     const d = Math.hypot(b.x - x, b.z - z);
     if (d < radius) botHear(b, x, z, kind, d, fake ? null : src);
   }
@@ -676,8 +697,12 @@ function startMatch() {
   const pt = G.playerTeam, other = pt === 'T' ? 'CT' : 'T';
   G.player = makeAgent(pt, 'You', true);
   G.agents.push(G.player);
-  for (let i = 0; i < 4; i++) G.agents.push(makeBot(pt, BOT_NAMES[pt][i]));
-  for (let i = 0; i < 5; i++) G.agents.push(makeBot(other, BOT_NAMES[other][i]));
+  // deathmatch still gives everyone a side, but only for the soldier model and buy list;
+  // hostile() ignores it. Team modes use the mode's team size (Wingman: 2v2).
+  const size = RULES.ffa ? Math.ceil((RULES.players || 10) / 2) : RULES.teamSize || 5;
+  const mates = RULES.ffa ? (RULES.players || 10) - 1 - size : size - 1;
+  for (let i = 0; i < mates; i++) G.agents.push(makeBot(pt, BOT_NAMES[pt][i]));
+  for (let i = 0; i < size; i++) G.agents.push(makeBot(other, BOT_NAMES[other][i]));
   for (const a of G.agents) if (a.bot) rollBotCosmetics(a);
   for (const a of G.agents) { a.model = makeSoldierModel(a.team); FX.scene.add(a.model.root); }
   G.score = { T: 0, CT: 0 }; G.lossCount = { T: 0, CT: 0 }; G.round = 0; G.roundsPlayed = 0; G.time = 0;
@@ -703,7 +728,15 @@ function resetLoadout(a) {
   for (const k of NADE_KEYS) a.nades[k] = 0;
   a.nadeSel = null; a.armor = 0; a.helmet = false; a.defuser = false; a.hasC4 = false;
 }
+// put an agent back on its feet with a clean per-life state (used by rounds and DM respawns)
+function reviveAgent(a) {
+  a.alive = true; a.hp = 100; a.deathT = 0; a.killer = null; a.hasC4 = false; a.dmgFrom = {}; a.roundDmg = 0;
+  a.vx = a.vy = a.vz = 0; a.onGround = true; a.duck = false; a.duckAmt = 0; a.height = H_STAND; a.eye = EYE_STAND; a.tagMod = 1;
+  a.reloadT = 0; a.drawT = 0; a.zoom = 0; a.rezoom = 0; a.recoilIdx = 0; a.inacc = 0; a.punchP = a.punchY = a.kickP = a.hurtP = a.hurtY = 0;
+  a.blindT = 0; a.planting = 0; a.defusing = false; a.spottedT = -99; a.burnAcc = 0; a.muzzleT = 0;
+}
 function startRound() {
+  if (RULES.ffa) { startDeathmatch(); return; } // deathmatch has one long "round" and respawns
   G.round++;
   let note = '';
   if (sideSwapDue()) {
@@ -729,10 +762,7 @@ function startRound() {
     } else {
       for (const k of [a.inv.primary, a.inv.secondary]) if (k) a.ammo[k] = { mag: WEAPONS[k].mag, res: WEAPONS[k].reserve };
     }
-    a.alive = true; a.hp = 100; a.deathT = 0; a.killer = null; a.hasC4 = false; a.dmgFrom = {}; a.roundDmg = 0; a.roundsPlayed++;
-    a.vx = a.vy = a.vz = 0; a.onGround = true; a.duck = false; a.duckAmt = 0; a.height = H_STAND; a.eye = EYE_STAND; a.tagMod = 1;
-    a.reloadT = 0; a.drawT = 0; a.zoom = 0; a.rezoom = 0; a.recoilIdx = 0; a.inacc = 0; a.punchP = a.punchY = a.kickP = a.hurtP = a.hurtY = 0;
-    a.blindT = 0; a.planting = 0; a.defusing = false; a.spottedT = -99; a.burnAcc = 0; a.muzzleT = 0;
+    reviveAgent(a); a.roundsPlayed++;
     const s = randomWalkableIn(SPAWN_ZONES[a.team], used); used.push(s);
     a.x = s.x; a.y = s.y; a.z = s.z;
     // face roughly toward the other team's spawn (i.e. toward the action)
@@ -748,8 +778,8 @@ function startRound() {
   carrier.hasC4 = true; G.bomb.carrier = carrier;
   for (const a of G.agents) if (a.bot) botBuy(a);
   botsNewRound();
-  const pt = G.player.team;
-  showMsg(note || (G.pistolRound ? 'Pistol round' : `Round ${G.round}`), pt === 'T' ? 'Buy phase: B to buy. You carry the C4.' : 'Buy phase: B to buy. Defend A and B.', 3.5, note ? pt.toLowerCase() : '');
+  const pt = G.player.team, sites = activeSites().join(' and ');
+  showMsg(note || (G.pistolRound ? 'Pistol round' : `Round ${G.round}`), pt === 'T' ? 'Buy phase: B to buy. You carry the C4.' : `Buy phase: B to buy. Defend ${sites}.`, 3.5, note ? pt.toLowerCase() : '');
   closeBuy(true);
 }
 function endRound(winner, reason) {
@@ -781,6 +811,7 @@ function endRound(winner, reason) {
   SFX.play(mine ? 'win' : 'lose');
 }
 function updateRound(dt) {
+  if (RULES.ffa) { updateDeathmatch(dt); return; }
   if (G.phase === 'freeze') {
     G.phaseT -= dt;
     if (G.phaseT <= 0) { G.phase = 'live'; G.liveT = G.time; SFX.play('go'); showMsg('', '', 0); }
@@ -798,15 +829,35 @@ function updateRound(dt) {
   if (aCT === 0 && G.phase !== 'over') { endRound('T', 'Enemies eliminated'); return; }
   if (aT === 0 && G.phase === 'live') { endRound('CT', 'Enemies eliminated'); return; }
 }
-const buyTimeLeft = () => (G.phase === 'freeze' ? BUY_TIME : G.phase === 'live' ? BUY_TIME - (G.time - G.liveT) : 0);
+// In deathmatch the "buy time" is a short free-pick window after each (re)spawn, per agent.
+function buyTimeLeft(a) {
+  if (RULES.ffa) {
+    a = a || G.player;
+    if (G.phase === 'freeze') return DM_PICK_TIME;
+    return G.phase === 'live' ? DM_PICK_TIME - (G.time - Math.max(a.spawnT || 0, G.liveT || 0)) : 0;
+  }
+  return G.phase === 'freeze' ? BUY_TIME : G.phase === 'live' ? BUY_TIME - (G.time - G.liveT) : 0;
+}
 function inBuyZone(a) {
+  if (RULES.ffa) return true; // you pick where you spawn
   const z = SPAWN_ZONES[a.team];
   return a.x > z.x0 - 10 && a.x < z.x1 + 4 && a.z > z.z0 - 4 && a.z < z.z1 + 4;
 }
-const canBuy = (a) => a.alive && G.state === 'playing' && buyTimeLeft() > 0 && inBuyZone(a);
+const canBuy = (a) => a.alive && G.state === 'playing' && buyTimeLeft(a) > 0 && inBuyZone(a);
+// deathmatch: what the buy menu offers (guns only; armor is free and there are no grenades)
+const DM_BUY_CATS = ['Pistols', 'Mid-tier', 'Rifles'];
+const buyCats = (a) => (RULES.ffa ? BUY_MENU[a.team].filter(([cat]) => DM_BUY_CATS.includes(cat)) : BUY_MENU[a.team]);
 function buyItem(a, item) {
   if (!canBuy(a)) return false;
   const w = WEAPONS[item], gear = GEAR[item];
+  if (RULES.ffa) {
+    // free pick: swap the gun in place (no drop, so the map doesn't fill with guns) and
+    // remember it so the next life starts with the same loadout
+    if (!w || (w.slot !== 'primary' && w.slot !== 'secondary') || (w.team && w.team !== a.team) || a.inv[w.slot] === item) return false;
+    dmGive(a, item); a.dmPick = a.dmPick || {}; a.dmPick[w.slot] = item;
+    equip(a, w.slot, true);
+    return true;
+  }
   if (w) {
     if ((w.team && w.team !== a.team) || a.money < w.price) return false;
     if (w.slot === 'grenade') {
@@ -834,6 +885,100 @@ function buyItem(a, item) {
   }
   return false;
 }
+// ============================================================ DEATHMATCH
+const DM_BOT_GUNS = {
+  T: ['ak47', 'ak47', 'ak47', 'galil', 'sg553', 'mac10', 'mp7', 'p90', 'xm1014', 'awp', 'ssg08'],
+  CT: ['m4a4', 'm4a1s', 'm4a4', 'famas', 'aug', 'mp9', 'ump45', 'p90', 'xm1014', 'awp', 'ssg08'],
+};
+const DM_BOT_PISTOLS = { T: ['glock', 'glock', 'p250', 'tec9', 'deagle'], CT: ['usp', 'usp', 'p250', 'fiveseven', 'deagle'] };
+// replace whatever is in the gun's slot with a fresh copy of it
+function dmGive(a, key) {
+  const w = WEAPONS[key], old = a.inv[w.slot];
+  if (old) delete a.ammo[old];
+  a.inv[w.slot] = null; giveWeapon(a, key);
+  a.skins[key] = equippedSkin(a, key);
+}
+// A random walkable point that no living enemy can see. Candidates are scored by distance to
+// the nearest enemy; a visible point is only used if nothing hidden turns up.
+function dmSpawnPoint(a, used) {
+  const whole = { x0: 2, x1: MAP_W - 2, z0: 2, z1: MAP_D - 2 };
+  const foes = G.agents.filter((e) => e.alive && hostile(a, e));
+  let best = null, bestScore = -1e9;
+  for (let i = 0; i < 40; i++) {
+    const c = randomWalkableIn(whole, used);
+    if (Math.abs(c.y) > 4) continue; // skip rooftops and other odd high spots
+    let near = 1e9, seen = false;
+    for (const e of foes) {
+      const d = Math.hypot(e.x - c.x, e.z - c.z);
+      near = Math.min(near, d);
+      if (!seen && d < 70 && losClear(e.x, e.y + e.eye, e.z, c.x, c.y + 1.4, c.z)) seen = true;
+    }
+    const score = Math.min(near, 30) - (seen ? 100 : 0);
+    if (!seen && near > 8) return c;
+    if (score > bestScore) { bestScore = score; best = c; }
+  }
+  return best || randomWalkableIn(whole, used);
+}
+function dmSpawn(a, used) {
+  reviveAgent(a);
+  resetLoadout(a);
+  // free loadout every life: the player keeps their last free pick, bots roll a gun
+  const guns = a.isPlayer ? a.dmPick || {} : { primary: pick(DM_BOT_GUNS[a.team]), secondary: pick(DM_BOT_PISTOLS[a.team]) };
+  dmGive(a, guns.primary || (a.team === 'T' ? 'ak47' : 'm4a4'));
+  if (guns.secondary && guns.secondary !== a.inv.secondary) dmGive(a, guns.secondary);
+  a.armor = 100; a.helmet = true;
+  const s = dmSpawnPoint(a, used || []); if (used) used.push(s);
+  a.x = s.x; a.y = s.y; a.z = s.z;
+  a.yaw = yawTo(a.x, a.z, MAP_W / 2, MAP_D / 2) + rand(-0.6, 0.6); a.pitch = 0;
+  a.spawnT = G.time; a.protectT = G.time + DM_PROTECT; a.respawnAt = 0;
+  a.slot = ''; equip(a, bestSlot(a)); a.drawT = 0;
+  if (a.model) a.model.deathT = 0;
+  if (a.bot) botDMSpawn(a);
+  if (a.isPlayer) { a.pinPulled = false; showMsg('', 'B: pick your guns (free) · spawn protection until you shoot', 2.2); }
+}
+function startDeathmatch() {
+  G.round = 1; G.roundsPlayed = 0;
+  G.phase = 'freeze'; G.phaseT = FREEZE_TIME; G.roundT = ROUND_TIME; G.liveT = G.time + FREEZE_TIME;
+  G.intel = { A: -99, B: -99 }; G.roundKills = {}; G.defuser = null; G.mvp = null; G.dmWinner = null;
+  FX.reset();
+  for (const d of G.drops) FX.scene.remove(d.mesh);
+  G.drops.length = 0;
+  resetBomb(); G.bomb.state = 'none'; // no bomb: hides it everywhere (radar, HUD, pickups)
+  const used = [];
+  for (const a of G.agents) { a.roundsPlayed = 1; dmSpawn(a, used); }
+  showMsg('Deathmatch', `Everyone is an enemy · first to ${RULES.killLimit} kills · B: pick your guns`, 3.5);
+  closeBuy(true);
+}
+// leaderboard order: most kills, then fewest deaths
+const dmRanking = () => G.agents.slice().sort((a, b) => b.kills - a.kills || a.deaths - b.deaths);
+function updateDeathmatch(dt) {
+  if (G.phase === 'freeze') {
+    G.phaseT -= dt;
+    if (G.phaseT <= 0) { G.phase = 'live'; G.liveT = G.time; SFX.play('go'); }
+    return;
+  }
+  // the free-pick menu blocks movement, so close it once the pick window is over
+  if (G.buyOpen && !canBuy(G.player)) closeBuy(false);
+  // respawns keep running in the short end phase too, so nobody is left spectating
+  for (const a of G.agents) if (!a.alive && a.respawnAt && G.time >= a.respawnAt) dmSpawn(a);
+  // guns dropped by the dead only lie around briefly
+  for (let i = G.drops.length - 1; i >= 0; i--) if (G.time - G.drops[i].t > DM_DROP_LIFE) { FX.scene.remove(G.drops[i].mesh); G.drops.splice(i, 1); }
+  if (G.phase === 'over') {
+    G.phaseT -= dt;
+    if (G.phaseT <= 0) endMatch();
+    return;
+  }
+  G.roundT -= dt;
+  const leader = dmRanking()[0];
+  if (leader.kills >= RULES.killLimit || G.roundT <= 0) {
+    G.roundT = Math.max(0, G.roundT);
+    G.phase = 'over'; G.phaseT = ROUND_END_TIME; G.dmWinner = leader;
+    closeBuy(true);
+    showMsg(leader.isPlayer ? 'You win the deathmatch' : `${leader.name} wins the deathmatch`, `${leader.kills} kills`, ROUND_END_TIME, leader.isPlayer ? 'ct' : 't');
+    SFX.play(leader.isPlayer ? 'win' : 'lose');
+  }
+}
+
 function shakeCamera(k) { CAM.shake = Math.max(CAM.shake, k); }
 
 // ============================================================ UPDATE

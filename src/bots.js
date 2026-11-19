@@ -12,7 +12,8 @@ function makeBot(team, name) {
   };
   return a;
 }
-const ENEMY = (b, e) => e.alive && e.team !== b.team;
+// a target worth engaging: alive, hostile (anyone in deathmatch) and not under spawn protection
+const ENEMY = (b, e) => e.alive && hostile(b, e) && !(RULES.ffa && e.protectT > G.time);
 function canSee(b, e) {
   if (b.blindT > 0.5) return false;
   const ex = b.x, ey = b.y + b.eye, ez = b.z;
@@ -60,7 +61,7 @@ function pickHold(b, where) {
   setGoal(b, spot[0] + rand(-0.4, 0.4), spot[1] + rand(-0.4, 0.4), true);
 }
 function botsNewRound() {
-  G.tSite = Math.random() < 0.5 ? 'A' : 'B';
+  G.tSite = pick(activeSites()); // Wingman: always A
   const ts = G.agents.filter((a) => a.bot && a.team === 'T'), cts = G.agents.filter((a) => a.bot && a.team === 'CT');
   const routes = T_ROUTES[G.tSite];
   const stage = ROUND_TIME - rand(22, 42);
@@ -70,8 +71,9 @@ function botsNewRound() {
     B.plan = 'route'; B.route = routes[i % routes.length]; B.routeI = 0; B.stageUntil = stage;
     setGoal(b, B.route[0][0], B.route[0][1], true);
   });
-  const order = shuffle(['A', 'A', 'B', 'B']).slice(0, cts.length);
-  order.splice(randInt(0, Math.max(0, cts.length - 1)), 0, 'mid');
+  let order;
+  if (RULES.sites && RULES.sites.length === 1) order = cts.map(() => RULES.sites[0]); // single-site modes: everyone holds it
+  else { order = shuffle(['A', 'A', 'B', 'B']).slice(0, cts.length); order.splice(randInt(0, Math.max(0, cts.length - 1)), 0, 'mid'); }
   cts.forEach((b, i) => {
     Object.assign(b.bot, { target: null, heard: null, nadeTask: null, usedUtil: false, save: false, rotateAt: 0 });
     pickHold(b, order[i] || pick(['A', 'B']));
@@ -115,7 +117,7 @@ function botHear(b, x, z, kind, d, src) {
   const B = b.bot;
   if (B.target && G.time - B.seenT < 1) return;
   B.heard = { x, z, t: G.time, kind };
-  if (src && b.team === 'CT') { const s = siteAt(x, z) || (calloutAt(x, z).match(/Quay|Gantry|Yard/) ? 'A' : calloutAt(x, z).match(/Alley|B Doors|Link/) ? 'B' : null); if (s) G.intel[s] = G.time; }
+  if (src && b.team === 'CT' && !RULES.ffa) { const s = siteAt(x, z) || (calloutAt(x, z).match(/Quay|Gantry|Yard/) ? 'A' : calloutAt(x, z).match(/Alley|B Doors|Link/) ? 'B' : null); if (s) G.intel[s] = G.time; }
 }
 function botOnHurt(b, att) {
   b.hurtT = G.time + 1.5;
@@ -228,8 +230,8 @@ function updateBot(b, dt) {
     for (const e of G.agents) {
       if (!ENEMY(b, e) || !canSee(b, e)) continue;
       const d = Math.hypot(e.x - b.x, e.z - b.z);
-      if (b.team === G.player.team) e.spottedT = G.time;
-      if (b.team === 'CT') { const s = siteAt(e.x, e.z); if (s) G.intel[s] = G.time; }
+      if (!RULES.ffa && b.team === G.player.team) e.spottedT = G.time; // teammates spot for your radar
+      if (b.team === 'CT' && !RULES.ffa) { const s = siteAt(e.x, e.z); if (s) G.intel[s] = G.time; }
       if (d < bd) { bd = d; best = e; }
     }
     if (best) {
@@ -241,7 +243,7 @@ function updateBot(b, dt) {
         B.aimZone = Math.random() < diff.hs ? 'head' : 'chest';
         B.burstLeft = 0;
         // share the call with nearby teammates
-        for (const m of G.agents) if (m.bot && m !== b && m.alive && m.team === b.team && Math.hypot(m.x - b.x, m.z - b.z) < 35 && !m.bot.target) m.bot.heard = { x: best.x, z: best.z, t: G.time, kind: 'callout' };
+        if (!RULES.ffa) for (const m of G.agents) if (m.bot && m !== b && m.alive && m.team === b.team && Math.hypot(m.x - b.x, m.z - b.z) < 35 && !m.bot.target) m.bot.heard = { x: best.x, z: best.z, t: G.time, kind: 'callout' };
       }
       B.target = best; B.seenT = G.time; B.lastSeen = { x: best.x, y: best.y, z: best.z };
     } else if (B.target && (!B.target.alive || G.time - B.seenT > 0.4)) {
@@ -387,14 +389,14 @@ function objectives(b, dt) {
           b.pitch = lerp(b.pitch, -0.9, dt * 4);
           if (b.planting >= PLANT_TIME) plantBomb(b);
         }
-      } else if (b.hasC4 && siteAt(b.x, b.z) && siteAt(b.x, b.z) !== G.tSite && G.phase === 'live') { G.tSite = siteAt(b.x, b.z); executeGoal(b); }
+      } else if (b.hasC4 && plantSiteAt(b.x, b.z) && plantSiteAt(b.x, b.z) !== G.tSite && G.phase === 'live') { G.tSite = plantSiteAt(b.x, b.z); executeGoal(b); } // only switch to a site we may plant on
       break;
     }
     case 'hold': {
       B.wantWalk = true;
       navigate(b, dt);
       const other = B.holdSite === 'A' ? 'B' : B.holdSite === 'B' ? 'A' : null;
-      const hot = G.intel.A > G.time - 4 ? 'A' : G.intel.B > G.time - 4 ? 'B' : null;
+      const hot = activeSites().find((s) => G.intel[s] > G.time - 4) || null; // Wingman: never rotate to B
       if (hot && hot !== B.holdSite && !B.rotateAt && (B.holdSite === 'mid' || Math.random() < 0.5)) B.rotateAt = G.time + rand(1.5, 5);
       if (B.rotateAt > 0 && G.time > B.rotateAt) { if (hot) pickHold(b, hot); B.rotateAt = -1; B.wantWalk = false; }
       if (hot === B.holdSite && nadeCount(b) && !B.usedUtil) planUtility(b, UTILITY['CT_' + hot]);
@@ -424,9 +426,36 @@ function objectives(b, dt) {
       break;
     }
     case 'save': navigate(b, dt); break;
+    case 'roam': roam(b, dt); break;
     default: break;
   }
   // investigate a recent noise when there is nothing better to do
   const heard = B.heard && G.time - B.heard.t < 3 ? B.heard : null;
   if (heard && (B.plan === 'hold' || B.plan === 'postplant') && heard.kind === 'lost' && Math.random() < dt * 0.15) { setGoal(b, heard.x, heard.z); }
+}
+
+// ---------- deathmatch ----------
+function botDMSpawn(b) {
+  Object.assign(b.bot, { plan: 'roam', goal: null, path: null, pathGoalKey: '', target: null, heard: null, nadeTask: null, look: null, roamT: 0, noiseCd: 0, wantWalk: false, wantDuck: false });
+}
+// Roam: walk to a fresh noise (gunfire carries far, which pulls bots toward fights), else
+// head for the nearest enemy now and then, else a random point on the map.
+function roam(b, dt) {
+  const B = b.bot;
+  B.wantWalk = false;
+  const heard = B.heard && G.time - B.heard.t < 2 ? B.heard : null;
+  // re-goal on noise at most every couple of seconds: every shot is a noise and pathing isn't free
+  if (heard && G.time > B.noiseCd && Math.hypot(heard.x - b.x, heard.z - b.z) < 40) {
+    B.noiseCd = G.time + rand(2, 3.5); B.roamT = rand(5, 9);
+    setGoal(b, heard.x + rand(-2, 2), heard.z + rand(-2, 2), true);
+  }
+  B.roamT -= dt;
+  const arrived = navigate(b, dt);
+  if (arrived || B.roamT <= 0 || !B.goal) {
+    B.roamT = rand(6, 12);
+    let near = null, nd = 1e9;
+    for (const e of G.agents) if (ENEMY(b, e)) { const d = Math.hypot(e.x - b.x, e.z - b.z); if (d < nd) { nd = d; near = e; } }
+    if (near && Math.random() < 0.45) setGoal(b, near.x + rand(-3, 3), near.z + rand(-3, 3), true);
+    else { const p = randomWalkableIn({ x0: 2, x1: MAP_W - 2, z0: 2, z1: MAP_D - 2 }); setGoal(b, p.x, p.z, true); }
+  }
 }

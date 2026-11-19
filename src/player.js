@@ -59,26 +59,26 @@ function updatePlayer(dt) {
     if (!p.defusing) startDefuse(p);
     if (Math.random() < dt * 1.5) makeSound(p, p.x, p.z, 16, 'defuse');
   } else if (p.defusing) { p.defusing = false; }
-  if (keys.KeyE && p.team === 'T' && p.hasC4 && siteAt(p.x, p.z) && w.cat !== 'c4') equip(p, 'c4');
+  if (keys.KeyE && p.team === 'T' && p.hasC4 && plantSiteAt(p.x, p.z) && w.cat !== 'c4') equip(p, 'c4');
   if (pressed.has('KeyE')) tryUseWeapon(p);
   mouse.leftDown = mouse.rightDown = false;
   // spot enemies for the radar
   for (const e of G.agents) {
-    if (!e.alive || e.team === p.team) continue;
+    if (!e.alive || !hostile(p, e)) continue;
     const off = Math.abs(angNorm(yawTo(p.x, p.z, e.x, e.z) - p.yaw));
     if (p.blindT < 0.5 && off < 60 * DEG && losClear(p.x, p.y + p.eye, p.z, e.x, e.y + 1.4, e.z) && !smokeBlocks(p.x, p.y + p.eye, p.z, e.x, e.y + 1.4, e.z)) e.spottedT = G.time;
   }
   pressed.clear();
 }
 function updatePlanting(p, dt, holding) {
-  const ok = holding && siteAt(p.x, p.z) && p.onGround && G.phase === 'live' && p.drawT <= 0;
+  const ok = holding && plantSiteAt(p.x, p.z) && p.onGround && G.phase === 'live' && p.drawT <= 0;
   if (ok) {
     if (!p.planting) p.planting = 0.0001;
     p.planting += dt;
     if (Math.random() < dt * 5) SFX.play('plantkey');
     if (p.planting >= PLANT_TIME) plantBomb(p);
   } else {
-    if (holding && !siteAt(p.x, p.z) && mouse.leftDown) showMsg('', 'You must be on a bombsite to plant the C4', 1.5);
+    if (holding && !plantSiteAt(p.x, p.z) && mouse.leftDown) showMsg('', siteAt(p.x, p.z) ? `Planting is only allowed on ${activeSites().join(' or ')} in this mode` : 'You must be on a bombsite to plant the C4', 1.5);
     p.planting = 0;
   }
 }
@@ -144,7 +144,7 @@ function viewAgent() {
   if (G.state !== 'playing') return null;
   if (p.alive) return p;
   if (G.time - p.deathT < 2.5) return null; // death cam
-  let list = G.agents.filter((a) => a.alive && a.team === p.team);
+  let list = RULES.ffa ? [] : G.agents.filter((a) => a.alive && a.team === p.team); // FFA: no teammates to follow
   if (!list.length) list = G.agents.filter((a) => a.alive);
   if (!list.length) return null;
   return list[((G.specIdx % list.length) + list.length) % list.length];

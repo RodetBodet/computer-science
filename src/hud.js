@@ -18,7 +18,8 @@ function onMatchStart() {
 function addKillfeed(k, v, key, hs, info, blind, noscope) {
   const el = document.createElement('div');
   el.className = 'kf' + ((k && k.isPlayer) || v.isPlayer ? ' mine' : '');
-  const name = (a) => `<span class="${a.team === 'T' ? 't' : 'ct'}">${a.name}</span>`;
+  // FFA has no sides, so names are neutral except your own
+  const name = (a) => `<span class="${RULES.ffa ? (a.isPlayer ? 'you' : 'ffa') : a.team === 'T' ? 't' : 'ct'}">${a.name}</span>`;
   const wname = key === 'c4' ? 'C4' : WEAPONS[key] ? WEAPONS[key].name : '';
   const tags = [blind ? '<b class="tag">blind</b>' : '', info.smoke ? '<b class="tag">smoke</b>' : '', noscope ? '<b class="tag">no-scope</b>' : '', info.wallbang ? '<b class="tag">wallbang</b>' : '', hs ? '<b class="tag hs">HS</b>' : ''].join('');
   el.innerHTML = `${k && k !== v ? name(k) : ''}<em>${wname}</em>${tags}${name(v)}`;
@@ -48,7 +49,8 @@ function buildRadarBg() {
     }
   }
   g.font = 'bold 44px sans-serif'; g.fillStyle = 'rgba(255,215,170,0.85)'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText('A', SITES.A.cx * RADAR_PX, SITES.A.cz * RADAR_PX); g.fillText('B', SITES.B.cx * RADAR_PX, SITES.B.cz * RADAR_PX);
+  // only label the sites that are in play (none in deathmatch, just A in Wingman)
+  if (!RULES.ffa) for (const k of activeSites()) g.fillText(k, SITES[k].cx * RADAR_PX, SITES[k].cz * RADAR_PX);
   HUD.radarBg = c;
 }
 function drawRadar(v) {
@@ -68,7 +70,7 @@ function drawRadar(v) {
   const pt = G.player.team;
   for (const a of G.agents) {
     if (a === v && a.alive) continue;
-    const mine = a.team === pt;
+    const mine = !RULES.ffa && a.team === pt; // in FFA everyone else is an enemy
     if (!mine && (!a.alive || G.time - a.spottedT > 1.3)) continue;
     const x = a.x * RADAR_PX, z = a.z * RADAR_PX;
     if (!a.alive) { g.strokeStyle = mine ? '#9cb8ff' : '#ff6a5a'; g.lineWidth = 3; g.beginPath(); g.moveTo(x - 6, z - 6); g.lineTo(x + 6, z + 6); g.moveTo(x + 6, z - 6); g.lineTo(x - 6, z + 6); g.stroke(); continue; }
@@ -90,7 +92,16 @@ function drawRadar(v) {
 }
 
 // ---------------------------------------------------------- scoreboard
+// deathmatch: one free-for-all table ranked by kills
+function dmBoardHTML(final) {
+  const rows = dmRanking().map((a, i) => {
+    const kd = (a.kills / Math.max(1, a.deaths)).toFixed(2);
+    return `<tr class="${a.isPlayer ? 'me' : ''} ${a.alive || final ? '' : 'dead'}"><td>${i + 1}</td><td>${a.name}</td><td>${a.kills}</td><td>${a.deaths}</td><td>${kd}</td><td>${a.totalDmg}</td></tr>`;
+  }).join('');
+  return `<div class="sb-team dm"><div class="sb-head"><b>Deathmatch</b><span>${RULES.killLimit} to win</span></div><table><tr><th>#</th><th>Player</th><th>K</th><th>D</th><th>K/D</th><th>Damage</th></tr>${rows}</table></div>`;
+}
 function scoreboardHTML(final) {
+  if (RULES.ffa) return dmBoardHTML(final);
   const rows = (team) => G.agents.filter((a) => a.team === team).sort((a, b) => b.kills - a.kills || a.deaths - b.deaths).map((a) => {
     const adr = a.roundsPlayed ? Math.round(a.totalDmg / Math.max(1, G.roundsPlayed || 1)) : 0;
     const stars = a.mvps ? `★${a.mvps > 1 ? a.mvps : ''}` : '';
@@ -109,6 +120,7 @@ function updateHUD(dt) {
   setClass($('armor-box'), 'helmet', v.helmet);
   setClass($('vitals'), 'low', v.hp <= 25);
   setText('money', '$' + p.money);
+  setClass($('money-box'), 'hidden', !!RULES.ffa); // no economy in deathmatch
   setClass($('buyzone'), 'hidden', !canBuy(p));
   setText('weapon-name', w.name);
   const am = v.ammo[v.weaponKey];
@@ -129,9 +141,21 @@ function updateHUD(dt) {
   setHTML('inventory', inv);
   // top bar
   const tl = G.player.team === 'T';
-  setText('score-l', String(G.score[tl ? 'T' : 'CT'])); setText('score-r', String(G.score[tl ? 'CT' : 'T']));
+  setClass($('dm-board'), 'hidden', !RULES.ffa);
+  if (RULES.ffa) {
+    // deathmatch: your kills on the left, the kill goal on the right, top 3 underneath
+    setText('score-l', String(p.kills)); setText('score-r', String(RULES.killLimit));
+    if (HUD.lastTeams !== 'dm') {
+      HUD.lastTeams = 'dm';
+      $('side-l').className = 'side dm me'; $('side-r').className = 'side dm';
+      $('alive-l').innerHTML = '<small>You</small>'; $('alive-r').innerHTML = '<small>Goal</small>';
+    }
+    setHTML('dm-board', dmRanking().slice(0, 3).map((a, i) => `<div class="${a.isPlayer ? 'me' : ''}"><em>${i + 1}</em><span>${a.name}</span><b>${a.kills}</b></div>`).join(''));
+  } else {
+    setText('score-l', String(G.score[tl ? 'T' : 'CT'])); setText('score-r', String(G.score[tl ? 'CT' : 'T']));
+  }
   const teams = tl ? 'T|CT' : 'CT|T';
-  if (HUD.lastTeams !== teams + G.agents.length) {
+  if (!RULES.ffa && HUD.lastTeams !== teams + G.agents.length) {
     HUD.lastTeams = teams + G.agents.length;
     $('side-l').className = 'side ' + (tl ? 't' : 'ct'); $('side-r').className = 'side ' + (tl ? 'ct' : 't');
     for (const [el, team] of [['alive-l', tl ? 'T' : 'CT'], ['alive-r', tl ? 'CT' : 'T']]) {
@@ -140,8 +164,11 @@ function updateHUD(dt) {
     }
   }
   for (const i of document.querySelectorAll('.alive i')) { const a = G.agents.find((x) => x.id == i.dataset.id); setClass(i, 'dead', !a || !a.alive); }
-  const half = G.roundsPlayed < REG_HALF ? '1st half' : G.roundsPlayed < REG_HALF * 2 ? '2nd half' : 'Overtime';
-  setText('round-label', G.phase === 'freeze' ? 'Buy phase' : `Round ${G.round} · ${half}`);
+  // overtime is numbered (each OT is 2 × OT_HALF rounds)
+  const otN = 1 + Math.floor((G.roundsPlayed - REG_HALF * 2) / (OT_HALF * 2));
+  const half = G.roundsPlayed < REG_HALF ? '1st half' : G.roundsPlayed < REG_HALF * 2 ? '2nd half' : `Overtime ${otN}`;
+  if (RULES.ffa) setText('round-label', G.phase === 'freeze' ? 'Get ready' : G.phase === 'over' ? 'Match over' : `Deathmatch · first to ${RULES.killLimit}`);
+  else setText('round-label', G.phase === 'freeze' ? 'Buy phase' : `Round ${G.round} · ${half}`);
   const tb = $('timer');
   if (G.phase === 'planted') { setText('timer', ''); setClass(tb, 'bomb', true); }
   else { setClass(tb, 'bomb', false); setText('timer', fmtTime(G.phase === 'freeze' ? G.phaseT : G.phase === 'over' ? 0 : G.roundT)); }
@@ -157,7 +184,10 @@ function updateHUD(dt) {
   let hint = '';
   const b = G.bomb;
   if (p.alive) {
-    if (p.team === 'T' && p.hasC4 && G.phase === 'live') hint = siteAt(p.x, p.z) ? 'Hold LMB with the C4 (5) or hold E to plant' : 'You have the C4: plant it on A or B';
+    if (RULES.ffa) {
+      if (p.protectT > G.time) hint = 'Spawn protection (ends when you shoot)';
+      else if (canBuy(p)) hint = `B: pick your guns for free (${Math.ceil(buyTimeLeft(p))} s)`;
+    } else if (p.team === 'T' && p.hasC4 && G.phase === 'live') hint = plantSiteAt(p.x, p.z) ? 'Hold LMB with the C4 (5) or hold E to plant' : `You have the C4: plant it on ${activeSites().join(' or ')}`;
     else if (p.team === 'T' && b.state === 'dropped') hint = 'The C4 was dropped: walk over it to pick it up';
     else if (p.team === 'CT' && G.phase === 'planted' && Math.hypot(p.x - b.x, p.z - b.z) < 1.6) hint = p.defuser ? 'Hold E to defuse (kit: 5 s)' : 'Hold E to defuse (10 s)';
     else if (p.team === 'CT' && G.phase === 'planted') hint = 'The bomb is planted: find it and defuse it';
@@ -173,7 +203,10 @@ function updateHUD(dt) {
   const spec = !p.alive && CAM.view && CAM.view !== p;
   setClass($('spectate'), 'hidden', p.alive);
   if (spec) setText('spectate', `Spectating ${CAM.view.name} · click to switch`);
-  else if (!p.alive) setText('spectate', p.killer && p.killer !== p ? `Killed by ${p.killer.name} (${p.killer.hp} HP left)` : 'You died');
+  else if (!p.alive) {
+    const by = p.killer && p.killer !== p ? `Killed by ${p.killer.name} (${p.killer.hp} HP left)` : 'You died';
+    setText('spectate', RULES.ffa && p.respawnAt ? `${by} · respawning in ${Math.max(0, p.respawnAt - G.time).toFixed(1)} s` : by);
+  }
   // damage + flash + smoke overlays
   const vg = $('dmg-vignette'), vo = parseFloat(vg.style.opacity || 0); if (vo > 0) vg.style.opacity = Math.max(0, vo - dt * 1.2).toFixed(3);
   if (HUD.dmgDirT > 0) { HUD.dmgDirT -= dt; $('dmg-dir').style.opacity = clamp(HUD.dmgDirT, 0, 1).toFixed(2); }
@@ -200,14 +233,15 @@ function buyLabel(k, team) {
 function renderBuyMenu() {
   const p = G.player;
   setText('buy-money', '$' + p.money);
-  setText('buy-time', `Buy time left: ${Math.max(0, Math.ceil(buyTimeLeft()))} s`);
+  setText('buy-time', `${RULES.ffa ? 'Free pick' : 'Buy time left'}: ${Math.max(0, Math.ceil(buyTimeLeft(p)))} s`);
   let html = '';
-  BUY_MENU[p.team].forEach(([cat, items], ci) => {
+  buyCats(p).forEach(([cat, items], ci) => {
     const open = G.buyCat === ci;
     html += `<div class="buy-cat ${open ? 'open' : ''}"><h3><kbd>${ci + 1}</kbd>${cat}</h3>`;
     items.forEach((k, ii) => {
       const L = buyLabel(k, p.team);
-      html += `<button class="buy-item ${L.owned ? 'owned' : ''} ${L.afford ? '' : 'poor'}" data-k="${k}"><kbd>${open ? ii + 1 : ''}</kbd><b>${L.name}</b><small>${L.stat}</small><span>${L.owned ? 'Owned' : '$' + L.price}</span></button>`;
+      const price = L.owned ? 'Owned' : RULES.ffa ? 'Free' : '$' + L.price;
+      html += `<button class="buy-item ${L.owned ? 'owned' : ''} ${L.afford || RULES.ffa ? '' : 'poor'}" data-k="${k}"><kbd>${open ? ii + 1 : ''}</kbd><b>${L.name}</b><small>${L.stat}</small><span>${price}</span></button>`;
     });
     html += '</div>';
   });
@@ -216,7 +250,7 @@ function renderBuyMenu() {
 }
 function doBuy(k) { if (buyItem(G.player, k)) SFX.play('buy'); else SFX.play('deny'); renderBuyMenu(); }
 function openBuy() {
-  if (!canBuy(G.player)) { SFX.play('deny'); showMsg('', buyTimeLeft() <= 0 ? 'Buy time is over' : 'You can only buy in your spawn', 1.4); return; }
+  if (!canBuy(G.player)) { SFX.play('deny'); showMsg('', RULES.ffa ? 'You can pick guns only right after you respawn' : buyTimeLeft() <= 0 ? 'Buy time is over' : 'You can only buy in your spawn', 1.4); return; }
   G.buyOpen = true; G.buyCat = null; renderBuyMenu();
   $('buy').classList.remove('hidden');
   if (document.pointerLockElement) document.exitPointerLock();
@@ -229,7 +263,7 @@ function closeBuy(silent) {
 function buyKey(e) {
   if (e.code === 'KeyB' || e.code === 'Escape') { closeBuy(false); return; }
   const m = e.code.match(/^Digit(\d)$/);
-  const cats = BUY_MENU[G.player.team];
+  const cats = buyCats(G.player);
   if (m) {
     const n = +m[1] - 1;
     if (G.buyCat === null) { if (cats[n]) { G.buyCat = n; renderBuyMenu(); } }

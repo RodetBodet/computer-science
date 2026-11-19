@@ -258,7 +258,7 @@ function detonate(n, landed) {
       if (d > 11) continue;
       if (!losClear(x, y + 0.2, z, a.x, cy, a.z) && !losClear(x, y + 0.2, z, a.x, a.y + 0.3, a.z)) continue;
       const sigma = 8.9 / 3; let dmg = 98 * Math.exp(-(d * d) / (2 * sigma * sigma));
-      if (a.team === n.owner.team && a !== n.owner) dmg *= 0.33;
+      if (!hostile(a, n.owner) && a !== n.owner) dmg *= 0.33; // reduced team damage (never applies in FFA)
       if (dmg >= 1) applyDamage(a, n.owner, 'he', dmg, 'chest', { x: a.x - x, y: 0, z: a.z - z, blast: true });
     }
     clearSmoke(x, y + 0.5, z, 3.2, 2.6);
