@@ -4,7 +4,8 @@
    Speeds/ranges are given in classic game units and converted (UNIT).
    Inaccuracy values are radians of cone half-angle.
    ===================================================================== */
-const W = (o) => Object.assign({ auto: false, pellets: 1, pen: 1, rangeMod: 0.9, range: 4096, inCrouch: 0.75, inJump: 0.3, recover: 0.35, award: 300, deploy: 0.6, scope: null, silenced: false, tracer: 1 }, o);
+// action: 'pump' / 'bolt' guns cycle by hand after every shot (animation, casing timing, sound)
+const W = (o) => Object.assign({ action: null, auto: false, pellets: 1, pen: 1, rangeMod: 0.9, range: 4096, inCrouch: 0.75, inJump: 0.3, recover: 0.35, award: 300, deploy: 0.6, scope: null, silenced: false, tracer: 1 }, o);
 const WEAPONS = {
   // ---------- pistols ----------
   glock: W({ name: 'Glock-18', slot: 'secondary', cat: 'pistol', team: 'T', price: 200, dmg: 30, ap: 0.47, rpm: 400, mag: 20, reserve: 120, reload: 2.27, speed: 240, rangeMod: 0.85, inStand: 0.0062, inMove: 0.03, inFire: 0.024, recover: 0.33, sound: 'pistol', pat: [11, 0.75, 6, 0.25], model: { type: 'pistol', body: 0x2b2c2e, slide: 0x2f3134 } }),
@@ -20,10 +21,10 @@ const WEAPONS = {
   ump45: W({ name: 'UMP-45', slot: 'primary', cat: 'smg', price: 1200, dmg: 35, ap: 0.65, rpm: 666, mag: 25, reserve: 100, reload: 3.5, speed: 230, rangeMod: 0.75, auto: true, inStand: 0.011, inMove: 0.04, inFire: 0.0065, recover: 0.3, award: 600, sound: 'smg', pat: [24, 0.62, 8, 0.45], model: { type: 'smg', len: 0.5, body: 0x2d2e2f, mag: 'straight', stock: 'polymer' } }),
   p90: W({ name: 'P90', slot: 'primary', cat: 'smg', price: 2350, dmg: 26, ap: 0.69, rpm: 857, mag: 50, reserve: 100, reload: 3.3, speed: 230, rangeMod: 0.86, auto: true, inStand: 0.01, inMove: 0.035, inFire: 0.0045, recover: 0.3, sound: 'smg', pat: [25, 0.4, 9, 0.35], model: { type: 'smg', len: 0.5, body: 0x3a3d33, mag: 'top', stock: 'bullpup' } }),
   // ---------- heavy ----------
-  nova: W({ name: 'Nova', slot: 'primary', cat: 'heavy', price: 1050, dmg: 26, pellets: 9, ap: 0.5, rpm: 68, mag: 8, reserve: 32, reload: 3.4, speed: 220, rangeMod: 0.7, range: 3000, inStand: 0.0, inMove: 0.03, inFire: 0, spread: 0.065, award: 900, sound: 'shotgun', pat: [31, 2.4, 1, 0], model: { type: 'shotgun', len: 1.0, body: 0x2a2b2d, accent: 0x1d1e20, pump: true } }),
+  nova: W({ action: 'pump', name: 'Nova', slot: 'primary', cat: 'heavy', price: 1050, dmg: 26, pellets: 9, ap: 0.5, rpm: 68, mag: 8, reserve: 32, reload: 3.4, speed: 220, rangeMod: 0.7, range: 3000, inStand: 0.0, inMove: 0.03, inFire: 0, spread: 0.065, award: 900, sound: 'shotgun', pat: [31, 2.4, 1, 0], model: { type: 'shotgun', len: 1.0, body: 0x2a2b2d, accent: 0x1d1e20, pump: true } }),
   xm1014: W({ name: 'XM1014', slot: 'primary', cat: 'heavy', price: 2000, dmg: 20, pellets: 6, ap: 0.8, rpm: 171, mag: 7, reserve: 32, reload: 3.6, speed: 215, rangeMod: 0.7, range: 3000, auto: true, inStand: 0.0, inMove: 0.03, inFire: 0, spread: 0.07, award: 900, sound: 'shotgun', pat: [32, 1.6, 4, 0.4], model: { type: 'shotgun', len: 1.0, body: 0x232425, accent: 0x232425 } }),
-  mag7: W({ name: 'MAG-7', slot: 'primary', cat: 'heavy', team: 'CT', price: 1300, dmg: 30, pellets: 8, ap: 0.75, rpm: 71, mag: 5, reserve: 32, reload: 2.4, speed: 225, rangeMod: 0.45, range: 1400, inStand: 0.0, inMove: 0.03, inFire: 0, spread: 0.055, award: 900, sound: 'shotgun', pat: [33, 2.8, 1, 0], model: { type: 'shotgun', len: 0.75, body: 0x3a3d40, accent: 0x222222, boxmag: true } }),
-  sawedoff: W({ name: 'Sawed-Off', slot: 'primary', cat: 'heavy', team: 'T', price: 1100, dmg: 32, pellets: 8, ap: 0.75, rpm: 71, mag: 7, reserve: 32, reload: 3.4, speed: 210, rangeMod: 0.45, range: 1400, inStand: 0.0, inMove: 0.03, inFire: 0, spread: 0.085, award: 900, sound: 'shotgun', pat: [34, 2.8, 1, 0], model: { type: 'shotgun', len: 0.62, body: 0x2c2c2c, accent: 0x7a4a26, pump: true, wood: true } }),
+  mag7: W({ action: 'pump', name: 'MAG-7', slot: 'primary', cat: 'heavy', team: 'CT', price: 1300, dmg: 30, pellets: 8, ap: 0.75, rpm: 71, mag: 5, reserve: 32, reload: 2.4, speed: 225, rangeMod: 0.45, range: 1400, inStand: 0.0, inMove: 0.03, inFire: 0, spread: 0.055, award: 900, sound: 'shotgun', pat: [33, 2.8, 1, 0], model: { type: 'shotgun', len: 0.75, body: 0x3a3d40, accent: 0x222222, boxmag: true } }),
+  sawedoff: W({ action: 'pump', name: 'Sawed-Off', slot: 'primary', cat: 'heavy', team: 'T', price: 1100, dmg: 32, pellets: 8, ap: 0.75, rpm: 71, mag: 7, reserve: 32, reload: 3.4, speed: 210, rangeMod: 0.45, range: 1400, inStand: 0.0, inMove: 0.03, inFire: 0, spread: 0.085, award: 900, sound: 'shotgun', pat: [34, 2.8, 1, 0], model: { type: 'shotgun', len: 0.62, body: 0x2c2c2c, accent: 0x7a4a26, pump: true, wood: true } }),
   // ---------- rifles ----------
   galil: W({ name: 'Galil AR', slot: 'primary', cat: 'rifle', team: 'T', price: 1800, dmg: 30, ap: 0.775, rpm: 666, mag: 35, reserve: 90, reload: 3.0, speed: 215, rangeMod: 0.98, pen: 2, auto: true, inStand: 0.0055, inMove: 0.13, inJump: 0.35, inFire: 0.0075, recover: 0.4, sound: 'rifle_t', pat: [41, 0.8, 9, 0.5], model: { type: 'rifle', len: 0.95, body: 0x3a3832, accent: 0x262624, stock: 'skeleton', mag: 'curved', magColor: 0x2b2b29, hg: 'polymer', carry: false } }),
   famas: W({ name: 'FAMAS', slot: 'primary', cat: 'rifle', team: 'CT', price: 2050, dmg: 30, ap: 0.7, rpm: 666, mag: 25, reserve: 90, reload: 3.3, speed: 220, rangeMod: 0.96, pen: 2, auto: true, inStand: 0.005, inMove: 0.12, inJump: 0.35, inFire: 0.0072, recover: 0.4, sound: 'rifle_ct', pat: [42, 0.75, 9, 0.45], model: { type: 'rifle', len: 0.76, body: 0x4a4d52, accent: 0x2a2c30, stock: 'bullpup', mag: 'straight', carry: true } }),
@@ -32,8 +33,8 @@ const WEAPONS = {
   m4a1s: W({ name: 'M4A1-S', slot: 'primary', cat: 'rifle', team: 'CT', price: 2900, dmg: 38, ap: 0.7, rpm: 600, mag: 20, reserve: 80, reload: 3.07, speed: 225, rangeMod: 0.99, pen: 2, auto: true, inStand: 0.0035, inMove: 0.12, inJump: 0.36, inFire: 0.006, recover: 0.36, sound: 'silenced_rifle', silenced: true, pat: [45, 0.65, 9, 0.33], model: { type: 'rifle', len: 0.84, body: 0x2c2e31, accent: 0x222326, stock: 'polymer', mag: 'straight', magColor: 0x3a3c40, hg: 'rail', silencer: true } }),
   sg553: W({ name: 'SG 553', slot: 'primary', cat: 'rifle', team: 'T', price: 3000, dmg: 30, ap: 1.0, rpm: 545, mag: 30, reserve: 90, reload: 2.8, speed: 210, rangeMod: 0.98, pen: 2, auto: true, inStand: 0.0042, inMove: 0.13, inJump: 0.36, inFire: 0.007, recover: 0.4, scope: [45], sound: 'rifle_t', pat: [46, 0.82, 9, 0.5], model: { type: 'rifle', len: 0.9, body: 0x3a3c35, accent: 0x2b2c27, stock: 'polymer', mag: 'curved', magColor: 0x2b2c27, hg: 'polymer', scope: 'small' } }),
   aug: W({ name: 'AUG', slot: 'primary', cat: 'rifle', team: 'CT', price: 3300, dmg: 28, ap: 0.9, rpm: 600, mag: 30, reserve: 90, reload: 3.8, speed: 220, rangeMod: 0.98, pen: 2, auto: true, inStand: 0.0038, inMove: 0.12, inJump: 0.36, inFire: 0.0066, recover: 0.38, scope: [45], sound: 'rifle_ct', pat: [48, 0.72, 9, 0.42], model: { type: 'rifle', len: 0.74, body: 0x4b5245, accent: 0x2b2e28, stock: 'bullpup', mag: 'straight', magColor: 0x8a9478, scope: 'small' } }),
-  ssg08: W({ name: 'SSG 08', slot: 'primary', cat: 'sniper', price: 1700, dmg: 88, ap: 0.85, rpm: 48, mag: 10, reserve: 90, reload: 3.7, speed: 230, rangeMod: 0.98, range: 8192, pen: 2.5, inStand: 0.03, inScoped: 0.0007, inMove: 0.17, inJump: 0.3, inFire: 0.06, recover: 0.3, scope: [40, 15], sound: 'scout', deploy: 1.0, pat: [51, 0, 1, 0], kick: 1.6, model: { type: 'sniper', len: 1.0, body: 0x3d434a, accent: 0x272b30, scope: 'big', slim: true } }),
-  awp: W({ name: 'AWP', slot: 'primary', cat: 'sniper', price: 4750, dmg: 115, ap: 0.975, rpm: 41, mag: 5, reserve: 30, reload: 3.67, speed: 200, rangeMod: 0.99, range: 8192, pen: 3, inStand: 0.09, inScoped: 0.0004, inMove: 0.3, inJump: 0.5, inFire: 0.08, recover: 0.4, scope: [40, 10], award: 100, sound: 'awp', deploy: 1.2, pat: [52, 0, 1, 0], kick: 2.6, model: { type: 'sniper', len: 1.18, body: 0x55623f, accent: 0x2a301e, scope: 'big' } }),
+  ssg08: W({ action: 'bolt', name: 'SSG 08', slot: 'primary', cat: 'sniper', price: 1700, dmg: 88, ap: 0.85, rpm: 48, mag: 10, reserve: 90, reload: 3.7, speed: 230, rangeMod: 0.98, range: 8192, pen: 2.5, inStand: 0.03, inScoped: 0.0007, inMove: 0.17, inJump: 0.3, inFire: 0.06, recover: 0.3, scope: [40, 15], sound: 'scout', deploy: 1.0, pat: [51, 0, 1, 0], kick: 1.6, model: { type: 'sniper', len: 1.0, body: 0x3d434a, accent: 0x272b30, scope: 'big', slim: true } }),
+  awp: W({ action: 'bolt', name: 'AWP', slot: 'primary', cat: 'sniper', price: 4750, dmg: 115, ap: 0.975, rpm: 41, mag: 5, reserve: 30, reload: 3.67, speed: 200, rangeMod: 0.99, range: 8192, pen: 3, inStand: 0.09, inScoped: 0.0004, inMove: 0.3, inJump: 0.5, inFire: 0.08, recover: 0.4, scope: [40, 10], award: 100, sound: 'awp', deploy: 1.2, pat: [52, 0, 1, 0], kick: 2.6, model: { type: 'sniper', len: 1.18, body: 0x55623f, accent: 0x2a301e, scope: 'big' } }),
   // ---------- melee / equipment ----------
   knife: W({ name: 'Knife', slot: 'knife', cat: 'knife', price: 0, dmg: 40, speed: 250, award: 1500, deploy: 0.5, model: { type: 'knife' } }),
   taser: W({ name: 'Zeus x27', slot: 'taser', cat: 'equipment', price: 200, dmg: 500, ap: 1, rpm: 30, mag: 1, reserve: 0, reload: 0, speed: 220, range: 180, inStand: 0.004, inMove: 0.01, inFire: 0, award: 0, sound: 'taser', model: { type: 'taser' } }),
@@ -58,6 +59,11 @@ const BUY_MENU = {
   CT: [['Pistols', ['usp', 'p250', 'fiveseven', 'deagle']], ['Mid-tier', ['mp9', 'mp7', 'ump45', 'p90', 'nova', 'xm1014', 'mag7']], ['Rifles', ['famas', 'm4a4', 'm4a1s', 'aug', 'ssg08', 'awp']], ['Grenades', ['flash', 'smoke', 'he', 'incgrenade', 'decoy']], ['Equipment', ['vest', 'vesthelm', 'defuser', 'taser']]],
 };
 for (const k in WEAPONS) WEAPONS[k].key = k;
+// spent case each gun throws out (see FX casings); knives, gear and grenades have none
+for (const k in WEAPONS) {
+  const w = WEAPONS[k];
+  w.casing = !w.mag || k === 'taser' ? null : w.cat === 'heavy' ? 'shell' : w.cat === 'pistol' || w.cat === 'smg' ? 'pistol' : w.cat === 'sniper' ? 'magnum' : 'rifle';
+}
 
 // ---------------------------------------------------------- spray patterns
 // Fixed (learnable) pattern per gun: climbs first, then sways side to side.
@@ -260,5 +266,5 @@ function gunModel(key, opts) {
   // find the cloned magazine by index path
   let mag = null;
   if (src.mag) { const idx = src.group.children.indexOf(src.mag); mag = g.children[idx]; }
-  return { group: g, muzzle: src.muzzle.clone(), fore: src.fore.clone(), mag };
+  return { group: g, muzzle: src.muzzle.clone(), fore: src.fore.clone(), mag, gltf: !!src.gltf }; // gltf: viewmodel rigs its bones
 }

@@ -101,6 +101,12 @@ const FX = {
     // light pool (fixed count so shaders never recompile mid-game)
     this.lights = [];
     for (let i = 0; i < 4; i++) { const l = new THREE.PointLight(0xffb060, 0, 12, 2); scene.add(l); this.lights.push({ l, t: 0, max: 0, power: 0 }); }
+    initCasings(scene);
+  },
+  // spent case for agent `a` firing weapon `key`, thrown out after `delay` seconds
+  queueCasing(a, key, delay) {
+    if (!a.isPlayer && a !== CAM.view && dist3(a, SFX.listener) > 28) return; // nobody would see it
+    CASINGS.queue.push({ a, key, t: delay || 0 });
   },
   reset() {
     for (const f of this.fires) f.stopSound();
@@ -108,6 +114,7 @@ const FX = {
     for (const d of this.decoys) if (d.mesh) this.scene.remove(d.mesh);
     this.particles.length = 0; this.tracers.length = 0; this.smokes.length = 0; this.fires.length = 0; this.nades.length = 0; this.decoys.length = 0;
     this.decals.count = 0; this.decalI = 0; this.blood.count = 0; this.bloodI = 0;
+    CASINGS.list.length = 0; CASINGS.queue.length = 0;
     if (WORLD.fireBlocked) WORLD.fireBlocked.fill(0);
   },
   flashLight(x, y, z, color, power, dur, range) {
@@ -190,6 +197,8 @@ const FX = {
       ta.set([0, 0, 0.9, 0.9], i * 4);
     });
     this.tracerMesh.geometry.attributes.position.needsUpdate = true; this.tracerMesh.geometry.attributes.alpha.needsUpdate = true;
+    updateCasings(dt);
+    updateMuzzleSmoke(dt);
     // smoke + fire
     updateSmokes(dt, camPos);
     updateFires(dt);
@@ -493,3 +502,133 @@ function updateFires(dt) {
   B.end();
 }
 function inFire(x, z) { const fb = WORLD.fireBlocked, i = navIndex(x, z); return !!(fb && i >= 0 && fb[i]); }
+
+// ======================================================= SHELL CASINGS
+// Pooled instanced brass and shotgun hulls with cheap point physics against the
+// collision boxes: gravity, bounce, tumble, slide to rest, then shrink away.
+const CASING_KINDS = {
+  pistol: { r: 0.0048, len: 0.02, mesh: 'brass', life: 6 },
+  rifle: { r: 0.0056, len: 0.042, mesh: 'brass', life: 7 },
+  magnum: { r: 0.007, len: 0.062, mesh: 'brass', life: 8 },
+  shell: { r: 0.0105, len: 0.062, mesh: 'hull', life: 8 },
+};
+const CASINGS = { list: [], queue: [], max: 140, brass: null, hull: null, lastTink: 0, dummy: null };
+const CASING_G = 12; // a bit under the movement gravity so the arc reads at viewmodel scale
+function initCasings(scene) {
+  const brassGeo = new THREE.CylinderGeometry(1, 1, 1, 8, 1);
+  const brass = new THREE.InstancedMesh(brassGeo, new THREE.MeshStandardMaterial({ color: 0xc89b3c, metalness: 0.9, roughness: 0.32, envMapIntensity: 1.2 }), CASINGS.max);
+  // hulls: red plastic body with a brass head (vertex colours by height)
+  const hullGeo = new THREE.CylinderGeometry(1, 1, 1, 10, 5), hp = hullGeo.attributes.position, cols = [];
+  for (let i = 0; i < hp.count; i++) { const head = hp.getY(i) < -0.25; cols.push(...(head ? [0.78, 0.6, 0.24] : [0.55, 0.06, 0.05])); }
+  hullGeo.setAttribute('color', new THREE.Float32BufferAttribute(cols, 3));
+  const hull = new THREE.InstancedMesh(hullGeo, new THREE.MeshStandardMaterial({ vertexColors: true, metalness: 0.25, roughness: 0.5 }), CASINGS.max);
+  for (const m of [brass, hull]) { m.count = 0; m.frustumCulled = false; m.instanceMatrix.setUsage(THREE.DynamicDrawUsage); scene.add(m); }
+  CASINGS.brass = brass; CASINGS.hull = hull; CASINGS.dummy = new THREE.Object3D();
+}
+const _cp = new THREE.Vector3(), _cr = new THREE.Vector3(), _cu = new THREE.Vector3(), _cf = new THREE.Vector3();
+function spawnCasing(a, w) {
+  const K = CASING_KINDS[w.casing]; if (!K) return;
+  // the agent we look through throws brass from the viewmodel's ejection port
+  const fromVM = a === CAM.view && VM.ejectWorld(_cp, _cr, _cu, _cf);
+  if (!fromVM) {
+    const m = muzzleWorld(a), f = dirFromAngles(a.yaw, a.pitch);
+    _cf.set(f.x, f.y, f.z); _cr.set(Math.cos(a.yaw), 0, -Math.sin(a.yaw)); _cu.crossVectors(_cr, _cf).normalize();
+    _cp.set(m.x, m.y, m.z).addScaledVector(_cf, w.cat === 'pistol' ? -0.2 : -0.42).addScaledVector(_cu, 0.04);
+  }
+  const shell = w.casing === 'shell', side = rand(1.4, 2.3) * (shell ? 0.75 : 1);
+  const c = {
+    K, x: _cp.x, y: _cp.y, z: _cp.z,
+    vx: _cr.x * side + _cu.x * rand(1.1, 1.9) + _cf.x * rand(-0.5, 0.05) + a.vx * 0.9,
+    vy: _cr.y * side + _cu.y * rand(1.1, 1.9) + _cf.y * rand(-0.5, 0.05) + a.vy * 0.5,
+    vz: _cr.z * side + _cu.z * rand(1.1, 1.9) + _cf.z * rand(-0.5, 0.05) + a.vz * 0.9,
+    rx: rand(0, TAU), ry: a.yaw, rz: Math.PI / 2, wx: rand(-30, 30), wy: rand(-8, 8), wz: rand(-22, 22),
+    life: K.life, bounced: false, ground: false, rest: false,
+  };
+  CASINGS.list.push(c);
+  if (CASINGS.list.length > CASINGS.max) CASINGS.list.shift();
+}
+function casingTink(c, speed) {
+  if (G.time - CASINGS.lastTink < 0.035 || dist3(c, SFX.listener) > 14) return; // a full spray shouldn't become noise
+  CASINGS.lastTink = G.time;
+  SFX.play('casing', { x: c.x, y: c.y, z: c.z }, { hull: c.K.mesh === 'hull', v: clamp(speed / 4, 0.3, 1) });
+}
+function updateCasings(dt) {
+  const Q = CASINGS.queue;
+  for (let i = Q.length - 1; i >= 0; i--) {
+    const q = Q[i]; q.t -= dt;
+    if (q.t > 0) continue;
+    Q.splice(i, 1);
+    if (q.a.alive && q.a.weaponKey === q.key) spawnCasing(q.a, WEAPONS[q.key]); // switched away mid-cycle: no case
+  }
+  const L = CASINGS.list;
+  for (let i = L.length - 1; i >= 0; i--) {
+    const c = L[i];
+    c.life -= dt;
+    if (c.life <= 0 || c.y < -8) { L.splice(i, 1); continue; }
+    if (c.rest || dt <= 0) continue;
+    if (c.ground) {
+      // sliding / rolling on the floor
+      const fr = Math.exp(-dt * 7); c.vx *= fr; c.vz *= fr; c.wx *= fr; c.wy *= fr;
+      const nx = c.x + c.vx * dt; if (pointSolid(nx, c.y + 0.006, c.z)) c.vx *= -0.3; else c.x = nx;
+      const nz = c.z + c.vz * dt; if (pointSolid(c.x, c.y + 0.006, nz)) c.vz *= -0.3; else c.z = nz;
+      if (!pointSolid(c.x, c.y - 0.02, c.z)) { c.ground = false; continue; } // rolled off a ledge
+      c.rx += c.wx * dt; c.ry += c.wy * dt;
+      c.rz += (Math.PI / 2 - c.rz) * Math.min(1, dt * 12); // settle on its side
+      if (Math.hypot(c.vx, c.vz) < 0.05) c.rest = true;
+      continue;
+    }
+    c.vy -= CASING_G * dt;
+    const nx = c.x + c.vx * dt; if (pointSolid(nx, c.y, c.z)) { c.vx *= -0.35; c.wy = -c.wy; } else c.x = nx;
+    const nz = c.z + c.vz * dt; if (pointSolid(c.x, c.y, nz)) { c.vz *= -0.35; c.wy = -c.wy; } else c.z = nz;
+    const ny = c.y + c.vy * dt;
+    if (pointSolid(c.x, ny, c.z)) {
+      const speed = Math.abs(c.vy);
+      if (c.vy > 0) { c.vy = -c.vy * 0.2; continue; } // hit a ceiling
+      if (!c.bounced || speed > 1.5) casingTink(c, speed);
+      c.bounced = true;
+      c.vy = speed * 0.3; c.vx *= 0.55; c.vz *= 0.55;
+      c.wx = c.wx * 0.5 + rand(-10, 10); c.wz *= 0.4;
+      if (c.vy < 0.45) { c.vy = 0; c.ground = true; }
+    } else c.y = ny;
+    c.rx += c.wx * dt; c.ry += c.wy * dt; c.rz += c.wz * dt;
+  }
+  // write the instance matrices
+  const d = CASINGS.dummy;
+  let nb = 0, nh = 0;
+  for (const c of L) {
+    const K = c.K, fade = Math.min(1, c.life / 0.6); // shrink away at the end of its life
+    d.position.set(c.x, c.y + (c.ground ? K.r : 0), c.z);
+    d.rotation.set(c.rx, c.ry, c.rz, 'YXZ');
+    d.scale.set(K.r * fade, K.len * fade, K.r * fade);
+    d.updateMatrix();
+    if (K.mesh === 'hull') CASINGS.hull.setMatrixAt(nh++, d.matrix); else CASINGS.brass.setMatrixAt(nb++, d.matrix);
+  }
+  CASINGS.brass.count = nb; CASINGS.hull.count = nh;
+  if (nb) CASINGS.brass.instanceMatrix.needsUpdate = true;
+  if (nh) CASINGS.hull.instanceMatrix.needsUpdate = true;
+}
+
+// ======================================================= MUZZLE SMOKE
+// Thin wisps curling off a hot barrel: they build up with sustained fire (a.heat,
+// added per shot in fireWeapon) and mostly show once the shooting stops.
+const _mp = new THREE.Vector3();
+function updateMuzzleSmoke(dt) {
+  if (G.state !== 'playing' || dt <= 0) return;
+  for (const a of G.agents) {
+    if (!a.heat) continue;
+    a.heat = Math.max(0, a.heat - dt * 0.38);
+    if (!a.alive || a.heat < 0.35) continue;
+    const since = G.time - a.lastShotT;
+    if (since > 3) continue;
+    const rate = (a.heat - 0.35) * 16 * (since < 0.15 ? 0.3 : 1);
+    if (Math.random() > rate * dt) continue;
+    let ok = a === CAM.view && VM.muzzleWorld(_mp);
+    if (!ok) {
+      if (dist3(a, SFX.listener) > 22) continue;
+      const m = muzzleWorld(a); _mp.set(m.x, m.y, m.z); ok = true;
+    }
+    const w = WEAPONS[a.weaponKey], k = w && w.silenced ? 0.6 : 1;
+    FX.spawn({ kind: 'smokepuff', x: _mp.x + rand(-0.01, 0.01), y: _mp.y, z: _mp.z + rand(-0.01, 0.01), vx: rand(-0.06, 0.06) + a.vx * 0.3, vy: rand(0.12, 0.3), vz: rand(-0.06, 0.06) + a.vz * 0.3,
+      life: rand(1.1, 1.9), max: 1.9, size: rand(0.035, 0.06), grow: 3.2, col: [0.8, 0.8, 0.78], a: 0.17 * k, rot: rand(0, TAU), g: -0.22 });
+  }
+}

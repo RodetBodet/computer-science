@@ -230,6 +230,16 @@ const SFX = {
       case 'pickup': this.noiseBurst(o, t, 0.1, 'bandpass', 1300, 2, 0.4); this.tone(o, t + 0.05, 0.04, 'square', 900, 0, 0.08); break;
       case 'pin': this.tone(o, t, 0.05, 'square', 2400, 0, 0.06); this.noiseBurst(o, t + 0.05, 0.05, 'bandpass', 3000, 3, 0.25); break;
       case 'throw': this.noiseBurst(o, t, 0.2, 'bandpass', 700, 1, 0.35, 2400); break;
+      case 'casing': {
+        // spent case hitting the floor: brass rings with a couple of detuned partials, hulls just thock
+        const v = (opt && opt.v) || 0.6, g = this.out(pos, 0.5 * v);
+        if (opt && opt.hull) { this.noiseBurst(g, t, 0.05, 'bandpass', 650 + Math.random() * 250, 2.5, 0.5); this.tone(g, t, 0.05, 'triangle', 300 + Math.random() * 80, 0, 0.12); break; }
+        const f = 3600 + Math.random() * 2200;
+        this.tone(g, t, 0.11, 'sine', f, f * 0.99, 0.09); this.tone(g, t, 0.07, 'sine', f * 1.47, 0, 0.05);
+        this.tone(g, t + 0.045 + Math.random() * 0.05, 0.06, 'sine', f * 1.06, 0, 0.04); // little second skip
+        this.noiseBurst(g, t, 0.015, 'highpass', 5000, 0, 0.12);
+        break;
+      }
       case 'bounce': this.tone(o, t, 0.05, 'triangle', 1200 + Math.random() * 500, 0, 0.15); break;
       case 'he': this.noiseBurst(o, t, 1.3, 'lowpass', 1500, 0, 1.6, 110); this.tone(o, t, 0.9, 'sine', 85, 28, 1.2); this.noiseBurst(o, t, 0.14, 'highpass', 1400, 0, 0.8); break;
       case 'flashbang': this.noiseBurst(o, t, 0.4, 'highpass', 1700, 0, 1.4); this.tone(o, t, 0.25, 'sine', 160, 55, 0.8); break;

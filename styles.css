@@ -330,3 +330,18 @@ button.go:hover { filter: brightness(1.08); } button.go:disabled { filter: grays
 
 .check { display: flex; align-items: center; gap: 8px; font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); margin-bottom: 14px; }
 .check input { accent-color: var(--accent); width: 16px; height: 16px; }
+
+/* optional hit marker: four short diagonal ticks around the (static) crosshair */
+#hitmarker { position: absolute; left: 50%; top: 50%; width: 0; height: 0; opacity: 0; pointer-events: none; }
+#hitmarker i { position: absolute; width: 7px; height: 2px; left: -3.5px; top: -1px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6); }
+#hitmarker i:nth-child(1) { transform: rotate(45deg) translateX(-9px); }
+#hitmarker i:nth-child(2) { transform: rotate(135deg) translateX(-9px); }
+#hitmarker i:nth-child(3) { transform: rotate(225deg) translateX(-9px); }
+#hitmarker i:nth-child(4) { transform: rotate(315deg) translateX(-9px); }
+#hitmarker.head i { background: #ffd34a; }
+#hitmarker.kill i { background: #ff4b3a; }
+
+/* viewmodel options (settings + pause); the panels scroll on short screens */
+.vm-opts { display: flex; flex-direction: column; }
+.vm-opts h3 { font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); margin: 4px 0 10px; }
+#settings-modal .panel, #pause .panel { max-height: 92vh; overflow-y: auto; }

@@ -48,6 +48,8 @@ const BOT_NAMES = { T: ['Viper', 'Rook', 'Nomad', 'Ash', 'Kestrel'], CT: ['Hawk'
 const G = {
   state: 'menu', paused: false, time: 0, menuT: 0,
   playerTeam: 'T', difficulty: 1, sens: 1.6, volume: 0.6, crosshairColor: '#4cff6a', quality: 1,
+  // viewmodel: horizontal FOV (4:3), offsets in cm, centered pose; hit marker is opt-in
+  vmFov: 68, vmX: 0, vmY: 0, vmZ: 0, vmCenter: false, hitMarker: false,
   phase: 'freeze', phaseT: 0, roundT: 0, round: 0, roundsPlayed: 0,
   score: { T: 0, CT: 0 }, lossCount: { T: 0, CT: 0 },
   agents: [], player: null, drops: [], killfeed: [],
@@ -173,9 +175,18 @@ function physicsStep(a, wishX, wishZ, wantJump, dt) {
   if (a.tagMod < 1) a.tagMod = Math.min(1, a.tagMod + dt * 1.4);
 }
 function onLand(a, v) {
+  // landing strength drives the camera/viewmodel dip and a short accuracy penalty
+  a.landT = G.time; a.landK = clamp((-v - 3) / 9, 0.2, 1);
   if (a.isPlayer) { a.kickP -= clamp(-v * 0.15, 0, 1.5); }
   if (a.isPlayer || dist3(a, SFX.listener) < 20) SFX.play('land', a.isPlayer ? null : { x: a.x, y: a.y, z: a.z });
   if (v < -4) makeSound(a, a.x, a.z, 16, 'step');
+}
+// 0..1 dip curve after a landing: quick drop, slower recovery
+function landDip(a) {
+  const t = G.time - (a.landT === undefined ? -9 : a.landT);
+  if (t < 0 || t > 0.34) return 0;
+  const e = t / 0.34;
+  return Math.sin(Math.min(1, e * 1.6) * Math.PI * 0.5) * (1 - e) * (a.landK || 0) * 1.4;
 }
 function surfaceUnder(a) {
   const hits = queryBoxes(a.x - 0.1, a.y - 0.1, a.z - 0.1, a.x + 0.1, a.y + 0.01, a.z + 0.1);
@@ -238,6 +249,7 @@ function startReload(a) {
   const w = curWeapon(a), am = a.ammo[a.weaponKey];
   if (!w.mag || !am || a.reloadT > 0 || am.mag >= w.mag || am.res <= 0 || a.drawT > 0) return false;
   a.zoom = 0; a.rezoom = 0; a.inspectT = 0;
+  a.reloadEmpty = am.mag === 0; // empty reloads also work the bolt / slide (viewmodel)
   if (w.cat === 'heavy' && w.key !== 'mag7') { a.reloadT = 0.55; a.reloadTotal = 0.55; a.shellReload = true; } // shotguns load shell by shell
   else { a.reloadT = w.reload; a.reloadTotal = w.reload; a.shellReload = false; }
   const rpos = a.isPlayer || a === CAM.view ? null : { x: a.x, y: a.y + 1, z: a.z };
@@ -284,9 +296,15 @@ function inaccuracy(a, w) {
   if (!w.inStand && w.inStand !== 0) return 0;
   let base = w.cat === 'sniper' && a.zoom ? w.inScoped : w.inStand;
   if (a.duckAmt > 0.9 && a.onGround) base *= w.inCrouch;
-  const sp = Math.hypot(a.vx, a.vz), ms = w.speed * UNIT;
+  // Movement penalty starts above 34% of the weapon's top speed (scoped speed when zoomed,
+  // ignoring the slow-down from being hit), so counter-strafed / crouch-walked shots stay
+  // accurate while running with a rifle sprays an ~8 degree cone.
+  const sp = Math.hypot(a.vx, a.vz), ms = Math.max(0.1, maxSpeed(a) / (a.tagMod || 1));
   const mf = clamp((sp / ms - 0.34) / 0.66, 0, 1);
   let inacc = base + mf * w.inMove + a.inacc;
+  // touching down after a jump keeps part of the air penalty for a moment
+  const lt = G.time - (a.landT === undefined ? -9 : a.landT);
+  if (a.onGround && lt >= 0 && lt < 0.25) inacc += (w.inJump || 0) * 0.35 * (1 - lt / 0.25) * (a.landK || 0);
   if (!a.onGround) inacc += w.inJump * (w.key === 'ssg08' && Math.abs(a.vy) < 1.2 ? 0.05 : 1); // jump-scouting at the apex is accurate
   return inacc;
 }
@@ -323,6 +341,10 @@ function fireWeapon(a, errYaw = 0, errPitch = 0) {
   }
   a.inacc = Math.min(a.inacc + w.inFire, 0.12);
   a.recoilIdx += 1;
+  // barrel heat for muzzle smoke wisps (FX.update) after sustained fire
+  a.heat = Math.min(1.6, (a.heat || 0) + ({ pistol: 0.07, smg: 0.055, rifle: 0.07, heavy: 0.3, sniper: 0.4 }[w.cat] || 0));
+  // spent case: right away for self-loaders, when the action is worked for pump / bolt guns
+  if (w.casing) FX.queueCasing(a, key, w.action === 'pump' ? 0.34 : w.action === 'bolt' ? 0.5 : 0);
   if (w.kick) a.kickP += w.kick;
   else if (w.cat === 'heavy') a.kickP += 1.6;
   // sound + noise
@@ -331,8 +353,9 @@ function fireWeapon(a, errYaw = 0, errPitch = 0) {
   makeSound(a, a.x, a.z, w.silenced ? 12 : 70, 'shot');
   if (a.isPlayer || a === CAM.view) FX.flashLight(e.x + Math.sin(-a.yaw) * 0.6, e.y - 0.2, e.z - Math.cos(a.yaw) * 0.6, 0xffc070, w.silenced ? 0 : 3.5, 0.06, 8);
   if (w.cat === 'sniper' && a.zoom) { a.rezoom = a.zoom; a.zoom = 0; }
-  if (w.cat === 'sniper' && a.isPlayer) setTimeout(() => SFX.play('bolt'), 350);
-  if (a.isPlayer && (w.key === 'nova' || w.key === 'sawedoff')) setTimeout(() => SFX.play('pump'), 300);
+  // timed to the viewmodel's bolt pull / pump stroke
+  if (w.action === 'bolt' && a.isPlayer) setTimeout(() => SFX.play('bolt'), 400);
+  if (w.action === 'pump' && a.isPlayer) setTimeout(() => SFX.play('pump'), 260);
   if (am.mag === 0 && am.res > 0) setTimeout(() => { if (a.alive && a.weaponKey === key && a.ammo[key] && a.ammo[key].mag === 0) startReload(a); }, 300);
   if (key === 'taser') { a.inv.taser = null; delete a.ammo.taser; setTimeout(() => { if (a.alive && a.slot === 'taser') equip(a, bestSlot(a)); }, 500); }
   return true;
@@ -465,6 +488,7 @@ function applyDamage(v, att, key, dmg, zone, info = {}) {
   if (!info.fire) { const k = armorHit ? 0.6 : 2.2; v.hurtP += rand(0.6, 1.2) * k; v.hurtY += rand(-1, 1) * k; }
   if (v.isPlayer) onPlayerHurt(att, d, info);
   else if (v.bot) botOnHurt(v, att);
+  if (att && att.isPlayer && att.team !== v.team && !info.fire && typeof showHitMarker === 'function') showHitMarker(zone === 'head', v.hp <= 0);
   if (att && (att.isPlayer || att === CAM.view)) SFX.play(zone === 'head' && !info.fire ? (v.helmet || armorHit && zone === 'head' ? 'helmet' : 'headshot') : 'hit');
   else if (zone === 'head' && dist3(v, SFX.listener) < 20) SFX.play('headshot', { x: v.x, y: v.y + 1.7, z: v.z });
   if (v.hp <= 0) killAgent(v, att, key, zone === 'head' && !info.fire && !info.blast, info);
@@ -733,7 +757,7 @@ function reviveAgent(a) {
   a.alive = true; a.hp = 100; a.deathT = 0; a.killer = null; a.hasC4 = false; a.dmgFrom = {}; a.roundDmg = 0;
   a.vx = a.vy = a.vz = 0; a.onGround = true; a.duck = false; a.duckAmt = 0; a.height = H_STAND; a.eye = EYE_STAND; a.tagMod = 1;
   a.reloadT = 0; a.drawT = 0; a.zoom = 0; a.rezoom = 0; a.recoilIdx = 0; a.inacc = 0; a.punchP = a.punchY = a.kickP = a.hurtP = a.hurtY = 0;
-  a.blindT = 0; a.planting = 0; a.defusing = false; a.spottedT = -99; a.burnAcc = 0; a.muzzleT = 0;
+  a.blindT = 0; a.planting = 0; a.defusing = false; a.spottedT = -99; a.burnAcc = 0; a.muzzleT = 0; a.heat = 0; a.landT = -9;
 }
 function startRound() {
   if (RULES.ffa) { startDeathmatch(); return; } // deathmatch has one long "round" and respawns

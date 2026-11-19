@@ -360,17 +360,32 @@ function endMatch() {
 }
 
 // ---------------------------------------------------------- settings + wiring
+// viewmodel + hit marker options: [key, label, min, max, step] sliders and [key, label] toggles.
+// Built into every .vm-opts box (settings modal and pause menu) and applied live by VM.update.
+const VM_SLIDERS = [['vmFov', 'Viewmodel FOV', 54, 90, 1], ['vmX', 'Offset right', -5, 5, 0.5], ['vmY', 'Offset up', -5, 5, 0.5], ['vmZ', 'Offset forward', -5, 5, 0.5]];
+const VM_TOGGLES = [['vmCenter', 'Center viewmodel'], ['hitMarker', 'Hit marker']];
+const VM_DEFAULTS = { vmFov: 68, vmX: 0, vmY: 0, vmZ: 0, vmCenter: false, hitMarker: false };
+function buildVmOptions() {
+  for (const box of document.querySelectorAll('.vm-opts')) {
+    box.innerHTML = '<h3>Viewmodel</h3>' + VM_SLIDERS.map(([k, label, min, max, step]) => `<label class="slider">${label} <input type="range" data-vm="${k}" min="${min}" max="${max}" step="${step}"><output data-vmo="${k}"></output></label>`).join('')
+      + VM_TOGGLES.map(([k, label]) => `<label class="check"><input type="checkbox" data-vm="${k}"> ${label}</label>`).join('');
+  }
+  for (const el of document.querySelectorAll('[data-vm]')) {
+    el.oninput = el.onchange = () => { G[el.dataset.vm] = el.type === 'checkbox' ? el.checked : +el.value; syncMenu(); saveSettings(); };
+  }
+}
 function loadSettings() {
   try {
     const s = JSON.parse(localStorage.getItem('strikepoint3d') || '{}');
     for (const k of ['sens', 'difficulty', 'volume', 'crosshairColor', 'quality', 'fullscreen']) if (s[k] !== undefined) G[k] = s[k];
+    for (const k in VM_DEFAULTS) if (typeof s[k] === typeof VM_DEFAULTS[k] && (typeof s[k] !== 'number' || isFinite(s[k]))) G[k] = s[k];
     if (s.mode && MODES[s.mode]) LOBBY.mode = s.mode;
     if (s.side) LOBBY.side = s.side;
     if (Array.isArray(s.pool)) { const ok = s.pool.filter((m) => MAP_DEFS[m]); if (ok.length) LOBBY.pool = new Set(ok); }
   } catch (e) { /* storage unavailable */ }
 }
 function saveSettings() {
-  try { localStorage.setItem('strikepoint3d', JSON.stringify({ fullscreen: G.fullscreen, sens: G.sens, difficulty: G.difficulty, volume: G.volume, crosshairColor: G.crosshairColor, quality: G.quality, mode: LOBBY.mode, side: LOBBY.side, pool: [...LOBBY.pool] })); } catch (e) { /* ignore */ }
+  try { localStorage.setItem('strikepoint3d', JSON.stringify({ fullscreen: G.fullscreen, sens: G.sens, difficulty: G.difficulty, volume: G.volume, crosshairColor: G.crosshairColor, quality: G.quality, vmFov: G.vmFov, vmX: G.vmX, vmY: G.vmY, vmZ: G.vmZ, vmCenter: G.vmCenter, hitMarker: G.hitMarker, mode: LOBBY.mode, side: LOBBY.side, pool: [...LOBBY.pool] })); } catch (e) { /* ignore */ }
 }
 function syncMenu() {
   $('opt-diff').value = G.difficulty; $('opt-quality').value = G.quality; $('opt-xcol').value = G.crosshairColor;
@@ -379,6 +394,8 @@ function syncMenu() {
   $('opt-vol').value = G.volume;
   $('opt-fs').checked = G.fullscreen !== false;
   document.documentElement.style.setProperty('--xhair', G.crosshairColor);
+  for (const el of document.querySelectorAll('[data-vm]')) { const v = G[el.dataset.vm]; if (el.type === 'checkbox') el.checked = !!v; else el.value = v; }
+  for (const o of document.querySelectorAll('[data-vmo]')) { const k = o.dataset.vmo, v = +G[k]; o.textContent = k === 'vmFov' ? String(v) : (v > 0 ? '+' : '') + v.toFixed(1); }
 }
 function initMenus() {
   for (const b of document.querySelectorAll('[data-tab]')) b.onclick = () => { SFX.init(); setTab(b.dataset.tab); };
@@ -407,6 +424,7 @@ function initMenus() {
   $('again-btn').onclick = () => { SFX.init(); $('matchover').classList.add('hidden'); launchMatch(LOBBY.lastMap); };
   $('menu-btn').onclick = () => toMenu();
   $('buy-close').onclick = () => closeBuy(false);
+  buildVmOptions();
   syncMenu();
   SFX.playMusic('lobby'); // starts once audio is allowed (first click)
   setTab('home');

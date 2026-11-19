@@ -7,6 +7,12 @@ function setText(id, v) { if (HUD.cache.get(id) === v) return; HUD.cache.set(id,
 function setHTML(id, v) { if (HUD.cache.get('h' + id) === v) return; HUD.cache.set('h' + id, v); $(id).innerHTML = v; }
 function setClass(el, cls, on) { if (el.classList.contains(cls) !== on) el.classList.toggle(cls, on); }
 function showMsg(text, sub, t, cls) { G.msg = { t }; setText('center-msg', text); setText('sub-msg', sub); $('center-msg').className = cls || ''; }
+// optional hit confirmation (settings, off by default); never moves the crosshair itself
+function showHitMarker(head, kill) {
+  if (!G.hitMarker) return;
+  HUD.hitT = kill ? 0.32 : 0.2;
+  $('hitmarker').className = kill ? 'kill' : head ? 'head' : '';
+}
 function popMoney(amt) {
   const el = $('money-pop'); el.textContent = (amt > 0 ? '+$' : '-$') + Math.abs(amt);
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
@@ -179,6 +185,9 @@ function updateHUD(dt) {
   setClass($('scope'), 'rifle', !!scoped && w.cat !== 'sniper');
   const hideCh = !v.alive || scoped || w.cat === 'sniper' || G.buyOpen;
   setClass($('crosshair'), 'hidden', hideCh);
+  HUD.hitT = Math.max(0, (HUD.hitT || 0) - dt);
+  const hm = G.hitMarker && HUD.hitT > 0 ? Math.min(1, HUD.hitT / 0.12).toFixed(2) : '0';
+  if (HUD.cache.get('hm') !== hm) { HUD.cache.set('hm', hm); $('hitmarker').style.opacity = hm; }
   // messages / hints
   if (G.msg && G.msg.t > 0) { G.msg.t -= dt; if (G.msg.t <= 0) { setText('center-msg', ''); setText('sub-msg', ''); } }
   let hint = '';
