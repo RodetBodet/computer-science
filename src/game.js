@@ -37,11 +37,17 @@ const hostile = (a, b) => !!a && !!b && a !== b && (RULES.ffa || a.team !== b.te
 // the bombsite at this point, but only if the current mode allows planting there (Wingman: A only)
 const plantSiteAt = (x, z) => { const s = siteAt(x, z); return s && (!RULES.sites || RULES.sites.includes(s)) ? s : null; };
 const activeSites = () => RULES.sites || Object.keys(SITES);
+// Bot skill. react: seconds before the first shot · aimErr: degrees of initial aim error · turn: deg/s
+// hs: headshot aim chance · spray: recoil control 0..1 · burst: max burst length
+// fov: half-angle of the vision cone (deg) · see: spotting range (m) · preaim: chance to pre-aim head height
+// peek: chance to stop and peek an angle properly · cstrafe: chance to stop before shooting
+// trade: chance to go for a refrag · util: chance to use planned utility · team: coordination (sync, regroup)
+// hearErr: how vague sound positions are (fraction of distance)
 const DIFFICULTY = [
-  { name: 'Easy', react: 0.55, aimErr: 3.2, turn: 260, hs: 0.15, spray: 0.3, burst: 3 },
-  { name: 'Normal', react: 0.34, aimErr: 1.9, turn: 420, hs: 0.35, spray: 0.6, burst: 5 },
-  { name: 'Hard', react: 0.22, aimErr: 1.1, turn: 620, hs: 0.55, spray: 0.85, burst: 8 },
-  { name: 'Expert', react: 0.15, aimErr: 0.6, turn: 900, hs: 0.75, spray: 0.95, burst: 12 },
+  { name: 'Easy', react: 0.58, aimErr: 3.8, turn: 230, hs: 0.1, spray: 0.25, burst: 3, fov: 58, see: 38, preaim: 0, peek: 0.05, cstrafe: 0.25, trade: 0.25, util: 0.3, team: 0.2, hearErr: 0.22 },
+  { name: 'Normal', react: 0.33, aimErr: 2.0, turn: 400, hs: 0.3, spray: 0.55, burst: 5, fov: 68, see: 50, preaim: 0.4, peek: 0.4, cstrafe: 0.65, trade: 0.6, util: 0.65, team: 0.6, hearErr: 0.15 },
+  { name: 'Hard', react: 0.2, aimErr: 1.2, turn: 600, hs: 0.48, spray: 0.8, burst: 8, fov: 74, see: 60, preaim: 0.75, peek: 0.7, cstrafe: 0.9, trade: 0.85, util: 0.85, team: 0.85, hearErr: 0.1 },
+  { name: 'Expert', react: 0.11, aimErr: 0.75, turn: 800, hs: 0.62, spray: 0.92, burst: 10, fov: 78, see: 60, preaim: 0.95, peek: 0.9, cstrafe: 1, trade: 1, util: 1, team: 1, hearErr: 0.07 },
 ];
 const BOT_NAMES = { T: ['Viper', 'Rook', 'Nomad', 'Ash', 'Kestrel'], CT: ['Hawk', 'Mason', 'Echo', 'Frost', 'Bishop'] };
 
