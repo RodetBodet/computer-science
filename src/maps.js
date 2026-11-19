@@ -232,4 +232,91 @@ MAP_DEFS.oldquarter = () => {
     },
   });
 };
-const MAP_ORDER = ['dockside', 'foundry', 'oldquarter'];
+// ====================================================================== SWITCHYARD
+// High-desert rail depot. Attackers start on the west siding, defenders at the depot office to the east.
+// A is an open freight platform with a raised signal box; B is a roofed engine shed; mid is a turntable square.
+MAP_DEFS.switchyard = () => {
+  const d = mapBuilder(), { rect, prop, container, crate } = d;
+  rect('T', 1, 12, 5, 19);    // attacker spawn (west siding)
+  rect(',', 2, 2, 4, 11);     // west siding north
+  rect('.', 5, 2, 19, 4);     // freight lane -> A
+  rect('w', 12, 2, 14, 4);    // tarp shed over the freight lane
+  rect('a', 20, 1, 31, 9);    // A: freight platform
+  rect('h', 28, 1, 31, 3);    // signal box deck (raised)
+  rect('.', 29, 4, 30, 5);    // signal box stairs
+  rect(',', 32, 4, 35, 12);   // depot road (defenders -> A)
+  rect('K', 33, 13, 38, 18);  // defender spawn (depot office yard)
+  rect(',', 6, 17, 8, 19);    // attacker exit to mid
+  rect('.', 9, 17, 16, 19);   // ballast street
+  rect('p', 17, 11, 24, 20);  // turntable square (mid)
+  rect('#', 19, 13, 22, 17);  // roundhouse office in the middle of the square
+  rect('.', 21, 10, 23, 10);  // switch gap (mid -> A)
+  rect('w', 25, 11, 28, 12);  // underpass (mid -> defenders)
+  rect(',', 29, 11, 31, 12);  // cut
+  rect('w', 18, 21, 19, 21);  // shed door (mid -> B)
+  rect('b', 13, 22, 25, 30);  // B: engine shed (roofed hall)
+  rect(',', 2, 20, 4, 28);    // south siding
+  rect('.', 5, 26, 12, 28);   // coal road -> B west door
+  rect('.', 34, 19, 36, 27);  // water tower lane (defenders -> B)
+  rect(',', 26, 25, 33, 27);  // tank yard -> B east door
+  d.stair(58, 8, 62, 12, '-z', 'metal');
+  // A platform: a boxcar, containers and freight
+  prop('vehicle', 42.5, 0, 9.4, 53.5, 3.0, 12.0, { pen: 0.5 });          // boxcar
+  container(['green'], 44, 14.6, true); container(['yellow', 'blue'], 57.2, 12.4, false, 2);
+  crate(41, 3, 2); crate(42.2, 3, 1); crate(54.5, 15.5, 1); crate(62.2, 18.2, 1); crate(51, 4.2, 1);
+  prop('pallet', 48, 0, 17, 49.4, 0.3, 18.2, { pen: 3 });
+  // freight lane + sidings
+  prop('dumpster', 17, 0, 4.2, 19, 1.3, 5.8, { pen: 1.2 }); crate(31.5, 8.6, 1); crate(32.7, 8.6, 2);
+  prop('barrier', 4.6, 0, 16, 5.2, 0.9, 19, { pen: 0 });
+  prop('vehicle', 5.2, 0, 44, 7.4, 2.4, 50, { pen: 0.8 });                // hopper car on the south siding
+  crate(16, 54.6, 1); crate(16, 55.8, 2); prop('barrier', 22, 0, 52.8, 22.6, 0.9, 55.4, { pen: 0 });
+  // turntable square
+  prop('metal', 34.6, 0, 27, 36.6, 1.1, 30, { pen: 0.8 });                // switch cabinet
+  crate(47.4, 22.6, 1); crate(48.6, 22.6, 2); crate(34.8, 38.6, 1);
+  prop('barrier', 46, 0, 39.4, 48.6, 0.9, 40, { pen: 0 });
+  prop('vehicle', 25, 0, 35, 28.2, 1.4, 36.6, { pen: 1.2 });              // rail trolley in ballast street
+  // underpass / cut / depot road
+  crate(60.4, 22.4, 1); prop('barrier', 65, 0, 15, 67, 0.9, 15.6, { pen: 0 }); crate(69.6, 9, 1); crate(69.6, 10.2, 2);
+  // engine shed
+  prop('vehicle', 33, 0, 51.2, 45, 3.4, 54.2, { pen: 0.5 });              // locomotive on the shed track
+  for (const [x, z] of [[32, 49], [46, 49], [32, 57], [46, 57]]) d.pillar(x, z, ROOF_H.b);
+  crate(27.6, 45.4, 2); crate(28.8, 45.4, 1); crate(49.2, 59.4, 1); crate(36, 59.6, 2); crate(37.2, 59.6, 1);
+  prop('metal', 41, 0, 58.6, 44.6, 2.2, 61.4, { pen: 0.8, shelf: true }); // tool racks
+  // tank yard + water tower lane
+  prop('metal', 57, 0, 50.6, 60, 2.6, 52.6, { pen: 0 });                  // fuel tank
+  crate(64, 54.4, 1); container(['red'], 69.4, 44, false);
+  d.decals = [['A', 50, 4.2, 2.02, 0, 3.0], ['A', 63.98, 4.4, 5, -Math.PI / 2, 2.0], ['B', 30, 3.4, 44.02, 0, 3.0], ['B', 26.02, 3.0, 47.5, Math.PI / 2, 2.4]];
+  d.floorDecals = [['A', 52, 16, 3.5], ['B', 39, 58, 3.5]];
+  d.lamps = [[33, ROOF_H.b - 0.25, 53, 60], [44, ROOF_H.b - 0.25, 55, 60], [53, ROOF_H.w - 0.15, 24, 22], [26, ROOF_H.w - 0.15, 6, 22]];
+  return Object.assign(d, {
+    id: 'switchyard', name: 'Switchyard', desc: 'Desert rail depot. A is a freight platform with a signal box, B a roofed engine shed.',
+    theme: { walls: ['block', 'corrugated', 'brick', 'concrete'], interior: 'corrugated', floors: { K: 'concreteFloor', p: 'concreteFloor' }, fog: 0xd2c3a2, harbor: false, depot: true, wet: 0.35, oilStains: true },
+    sites: { A: { x0: 40, x1: 64, z0: 2, z1: 20, cx: 50, cz: 13 }, B: { x0: 26, x1: 52, z0: 44, z1: 62, cx: 39, cz: 48.5 } },
+    spawns: { T: { x0: 2.5, x1: 11.5, z0: 24.5, z1: 39.5 }, CT: { x0: 66.5, x1: 77.5, z0: 26.5, z1: 37.5 } },
+    callouts: [
+      ['Signal Box', 56, 2, 64, 8], ['A Platform', 40, 2, 64, 20], ['Tarp Shed', 24, 4, 30, 10], ['Freight Lane', 10, 4, 40, 10],
+      ['West Siding', 4, 4, 10, 24], ['Switch Gap', 42, 20, 48, 22], ['Depot Road', 64, 8, 72, 26], ['Defender Spawn', 66, 26, 78, 38],
+      ['Underpass', 50, 22, 58, 26], ['Cut', 58, 22, 64, 26], ['Turntable', 34, 22, 50, 42], ['Ballast Street', 12, 34, 34, 40],
+      ['Shed Door', 36, 42, 40, 44], ['Engine Shed', 26, 44, 52, 62], ['South Siding', 4, 40, 10, 58], ['Coal Road', 10, 52, 26, 58],
+      ['Tank Yard', 52, 50, 68, 56], ['Water Tower', 68, 38, 74, 56], ['Attacker Spawn', 2, 24, 12, 40],
+    ],
+    routes: {
+      A: [[[7, 22], [7, 7], [24, 7], [42, 7]], [[14, 37], [36, 37], [36, 24], [45, 21], [46, 19]]],
+      B: [[[7, 38], [7, 55], [20, 55], [30, 55]], [[14, 37], [32, 38], [38, 40], [38, 46]]],
+    },
+    plants: { A: [[48, 6], [55.5, 19], [45, 18.5], [55, 5]], B: [[31, 47.5], [47, 60.5], [40, 47], [30, 60]] },
+    holds: {
+      A: [[60, 5, 24, 7], [56, 17.5, 45, 21], [44, 6, 20, 7], [62.5, 15.5, 45, 21]],
+      B: [[48.5, 47, 38, 43], [30.5, 51, 26, 55], [49.5, 61, 26, 55], [34, 61, 38, 43]],
+      mid: [[56, 23, 36, 24], [62, 24, 40, 24]],
+    },
+    entries: { A: [[45, 21], [41, 7], [66, 12]], B: [[38, 43], [25, 55], [53, 53]] },
+    utility: {
+      A: [['smoke', 30, 7, 57, 8], ['flash', 36, 7, 50, 8], ['smoke', 36, 25, 54, 17], ['molotov', 36, 24, 46, 16]],
+      B: [['smoke', 15, 55, 33, 50], ['flash', 18, 55, 32, 52], ['molotov', 37, 39, 44, 48], ['he', 37, 39, 40, 50]],
+      CT_A: [['molotov', 54, 12, 45, 21], ['he', 52, 7, 40, 7], ['smoke', 58, 10, 44, 21]],
+      CT_B: [['molotov', 44, 50, 38, 43], ['he', 46, 56, 26, 55], ['flash', 44, 48, 38, 44]],
+    },
+  });
+};
+const MAP_ORDER = ['dockside', 'foundry', 'oldquarter', 'switchyard'];

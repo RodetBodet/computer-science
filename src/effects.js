@@ -84,6 +84,11 @@ const FX = {
     this.decals = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.09, 0.09), dm, 300); this.decals.count = 0; this.decalI = 0; scene.add(this.decals);
     const bm = new THREE.MeshStandardMaterial({ map: FX_TEX.puff, color: 0x6a0a06, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, roughness: 1 });
     this.blood = new THREE.InstancedMesh(new THREE.PlaneGeometry(0.7, 0.7), bm, 80); this.blood.count = 0; this.bloodI = 0; scene.add(this.blood);
+    // blood pools that spread under corpses (one per death, max 10 alive; visual only)
+    const pm = new THREE.MeshStandardMaterial({ map: detailTextures().pool, color: 0x420404, roughness: 0.3, metalness: 0.05, envMapIntensity: 0.55, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3, polygonOffsetUnits: -3 });
+    this.poolMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1), pm, 10); this.poolMesh.count = 0; this.poolMesh.renderOrder = 3;
+    this.poolMesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); this.poolMesh.frustumCulled = false; scene.add(this.poolMesh);
+    this.pools = []; this.poolSeen = new Map();
     // tracers: CPU-built ribbons
     this.tracerMax = 64;
     const tg = new THREE.BufferGeometry();
@@ -115,6 +120,7 @@ const FX = {
     this.particles.length = 0; this.tracers.length = 0; this.smokes.length = 0; this.fires.length = 0; this.nades.length = 0; this.decoys.length = 0;
     this.decals.count = 0; this.decalI = 0; this.blood.count = 0; this.bloodI = 0;
     CASINGS.list.length = 0; CASINGS.queue.length = 0;
+    this.pools.length = 0; this.poolSeen.clear(); this.poolMesh.count = 0;
     if (WORLD.fireBlocked) WORLD.fireBlocked.fill(0);
   },
   flashLight(x, y, z, color, power, dur, range) {
@@ -204,8 +210,47 @@ const FX = {
     updateFires(dt);
     updateDecoys(dt);
     this.dustBatch.end(); this.addBatch.end();
+    this.updatePools(dt);
+    updateDust();
+  },
+  // watch for new corpses and grow a pool under each over ~1 s
+  updatePools(dt) {
+    if (G.agents) for (const a of G.agents) {
+      if (a.alive || !a.deathT || this.poolSeen.get(a) === a.deathT) continue;
+      this.poolSeen.set(a, a.deathT);
+      const ni = navIndex(a.x, a.z), fy = ni >= 0 && WORLD.nav.walk[ni] ? WORLD.nav.h[ni] : Math.max(0, a.y);
+      if (a.y - fy > 0.6) continue; // died in the air over a drop: skip rather than float a pool
+      const f = dirFromAngles(a.yaw, 0), back = a.model && a.model.deathDir ? a.model.deathDir : 1;
+      // the torso lands roughly 0.6 m from the feet in the fall direction
+      if (this.pools.length >= 10) this.pools.shift();
+      this.pools.push({ x: a.x - f.x * 0.6 * back, y: fy + 0.016, z: a.z - f.z * 0.6 * back, t: -0.55, agent: a, size: rand(1.6, 2.1), ar: rand(0.75, 1), rot: rand(0, TAU) });
+    }
+    if (!this.pools.length) return;
+    const m = _poolM, q = _poolQ, s = _poolS, p = _poolP;
+    let dirty = false;
+    this.pools.forEach((pl, i) => {
+      if (pl.t < 1.2) {
+        const before = pl.t; pl.t += dt; dirty = true;
+        // once the body has landed, centre the pool under the torso (the death clip decides where that is)
+        if (before < 0 && pl.t >= 0 && pl.agent && pl.agent.model && pl.agent.model.root && !pl.agent.alive) {
+          let torso = null;
+          pl.agent.model.root.traverse((o) => { if (!torso && (o.isBone || o.isObject3D) && /spine|chest|torso/i.test(o.name)) torso = o; });
+          if (torso) {
+            torso.getWorldPosition(_poolP);
+            if (Math.hypot(_poolP.x - pl.x, _poolP.z - pl.z) < 1.6) { pl.x = _poolP.x; pl.z = _poolP.z; }
+          }
+        }
+      }
+      const k = clamp(pl.t / 1.0, 0, 1), grow = 1 - Math.pow(1 - k, 2.2); // fast at first, then seeping
+      q.setFromEuler(_poolE.set(-Math.PI / 2, 0, pl.rot, 'YXZ'));
+      s.set(pl.size * Math.max(0.001, grow), pl.size * pl.ar * Math.max(0.001, grow), 1);
+      this.poolMesh.setMatrixAt(i, m.compose(p.set(pl.x, pl.y, pl.z), q, s));
+    });
+    if (dirty || this.poolMesh.count !== this.pools.length) { this.poolMesh.count = this.pools.length; this.poolMesh.instanceMatrix.needsUpdate = true; }
   },
 };
+
+const _poolM = new THREE.Matrix4(), _poolQ = new THREE.Quaternion(), _poolS = new THREE.Vector3(), _poolP = new THREE.Vector3(), _poolE = new THREE.Euler();
 
 // ======================================================= GRENADE FLIGHT
 function throwGrenade(owner, type, x, y, z, vx, vy, vz) {
